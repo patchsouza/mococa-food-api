@@ -18,7 +18,8 @@
     "fastify": "^4.28.1",
     "fastify-plugin": "^4.5.1",
     "ioredis": "^5.4.1",
-    "mongoose": "^8.5.2"
+    "mongoose": "^8.5.2",
+    "qrcode": "^1.5.4"
   },
   "devDependencies": {
     "pino-pretty": "^11.2.2"

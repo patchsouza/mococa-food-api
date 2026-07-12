@@ -10,5 +10,10 @@ export const env = {
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
 
   deliverySearchRadiusKm: Number(process.env.DELIVERY_SEARCH_RADIUS_KM || 6),
-  courierOfferTtlSeconds: Number(process.env.COURIER_OFFER_TTL_SECONDS || 25)
+  courierOfferTtlSeconds: Number(process.env.COURIER_OFFER_TTL_SECONDS || 25),
+  
+  // Configurações Pix
+  pixEnabled: process.env.PIX_ENABLED === 'true' || true,
+  pixExpirationMinutes: Number(process.env.PIX_EXPIRATION_MINUTES || 30),
+  pixWebhookSecret: process.env.PIX_WEBHOOK_SECRET || 'segredo-webhook-pix'
 };

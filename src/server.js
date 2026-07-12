@@ -12,6 +12,7 @@ import restaurantRoutes from './routes/restaurant.routes.js';
 import orderRoutes from './routes/order.routes.js';
 import deliveryRoutes from './routes/delivery.routes.js';
 import dashboardRoutes from './routes/dashboard.routes.js';
+import pixRoutes from './routes/pix.routes.js';
 
 import { HttpError } from './utils/errors.js';
 
@@ -50,6 +51,7 @@ async function bootstrap() {
   await fastify.register(orderRoutes, { prefix: '/api' });
   await fastify.register(deliveryRoutes, { prefix: '/api' });
   await fastify.register(dashboardRoutes, { prefix: '/api' });
+  await fastify.register(pixRoutes, { prefix: '/api' });
 
   await fastify.listen({ port: env.port, host: env.host });
   fastify.log.info(`Mococa Food API rodando em http://${env.host}:${env.port}`);

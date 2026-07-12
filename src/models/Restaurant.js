@@ -34,6 +34,12 @@ const restaurantSchema = new Schema(
     minOrderValue: { type: Number, default: 0 },
     avgPrepTimeMinutes: { type: Number, default: 30 },
 
+    // Configurações de pagamento Pix do restaurante
+    pixKey: String, // Chave Pix (CPF/CNPJ/Email/Aleatória)
+    pixKeyType: { type: String, enum: ['cpf', 'cnpj', 'email', 'phone', 'random'], default: 'email' },
+    pixBank: { type: String, default: '001' }, // Código do banco (ex: 001 = Banco do Brasil)
+    pixMerchantName: String, // Nome comercial para transações Pix (se diferente do name)
+
     openingHours: [openingHoursSchema],
     isOpen: { type: Boolean, default: true }, // aberto/fechado manual pelo dono
     isApproved: { type: Boolean, default: true }, // aprovação de cadastro (admin)
