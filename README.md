@@ -113,11 +113,12 @@ Quando o restaurante marca `ready_for_pickup`, o sistema automaticamente:
 ```
 src/
   config/     # env, mongo, redis
-  models/     # User, Restaurant, Product, Order
+  models/     # User, Restaurant, Product, Order, PixTransaction
   plugins/    # auth (JWT + autorização por role)
-  routes/     # auth, restaurant, order, delivery, dashboard
-  services/   # regras de negócio (order, delivery, notification)
+  routes/     # auth, restaurant, order, delivery, dashboard, pix
+  services/   # regras de negócio (order, delivery, notification, pix)
   utils/      # erros, cache, geo, seed
+  modules/    # documentação de módulos (PIX_README.md)
   server.js
 ```
 
@@ -134,7 +135,44 @@ curl -X POST localhost:3000/api/orders -H "Authorization: Bearer <TOKEN>" -H "Co
 ```
 
 ## Próximos passos sugeridos
-- Adicionar integração real de pagamento Pix (webhook de confirmação).
+
+### ✅ Implementado: Módulo de Pagamento Pix
+
+O módulo de pagamento Pix foi implementado com sucesso! Consulte a documentação completa em [`src/modules/PIX_README.md`](src/modules/PIX_README.md).
+
+**Resumo das funcionalidades:**
+- Geração automática de QR Code Pix (BR Code) com CRC16
+- Webhook para confirmação automática de pagamentos
+- Integração completa com o fluxo de pedidos
+- Cancelamento e expiração automáticos de transações
+- Dashboard de transações para restaurantes
+
+**Novos endpoints adicionados:**
+| Método | Rota | Descrição |
+|---|---|---|
+| POST | `/api/orders/:orderId/pix` | Cria transação Pix para um pedido |
+| GET | `/api/pix/:transactionId` | Obtém detalhes da transação |
+| GET | `/api/orders/:orderId/pix` | Obtém transação por pedido |
+| DELETE | `/api/pix/:transactionId` | Cancela transação pendente |
+| GET | `/api/pix/transactions` | Lista transações (admin/restaurante) |
+| POST | `/api/pix/webhook` | Recebe confirmações de pagamento |
+
+**Configuração necessária:**
+```bash
+# .env
+PIX_ENABLED=true
+PIX_EXPIRATION_MINUTES=30
+PIX_WEBHOOK_SECRET=seu-segredo-aqui
+
+# Configure as chaves Pix de cada restaurante no modelo Restaurant:
+{
+  pixKey: "cnpj@restaurante.com.br",
+  pixKeyType: "email",
+  pixBank: "001"
+}
+```
+
+### Pendentes
 - Push notifications (FCM) além do SSE para quando o app estiver em background.
 - Testes automatizados (bun:test) para os serviços de pedido e entrega.
 - Rate limiting global (`@fastify/rate-limit`) e validação de schema com JSON Schema/Zod nas rotas.
