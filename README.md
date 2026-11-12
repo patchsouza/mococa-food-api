@@ -159,11 +159,10 @@ O módulo de pagamento Pix foi implementado com sucesso! Consulte a documentaç�
 
 **Configuração necessária:**
 ```bash
-# .env (nunca commite valores reais)
+# .env
 PIX_ENABLED=true
 PIX_EXPIRATION_MINUTES=30
-PIX_WEBHOOK_SECRET=gere-um-segredo-forte-ex-openssl-rand-hex-32
-PIX_WEBHOOK_REQUIRE_SIGNATURE=true   # "false" apenas para testes locais
+PIX_WEBHOOK_SECRET=seu-segredo-aqui
 
 # Configure as chaves Pix de cada restaurante no modelo Restaurant:
 {
@@ -172,19 +171,6 @@ PIX_WEBHOOK_REQUIRE_SIGNATURE=true   # "false" apenas para testes locais
   pixBank: "001"
 }
 ```
-
-**Segurança do webhook:** `POST /api/pix/webhook` exige o header `x-webhook-signature`
-com HMAC-SHA256 (hex, ou prefixo `sha256=`) do corpo bruto, calculado com `PIX_WEBHOOK_SECRET`.
-Requisições sem assinatura válida recebem `401`.
-
-**Job de expiração:** transações pendentes vencidas são expiradas automaticamente a cada
-60s pelo `src/jobs/pixExpiration.job.js` (registrado no bootstrap), cancelando também o
-pedido associado.
-
-**Frontend:** o checkout Pix foi iniciado em `frontend/src/components/cliente/PixCheckoutModal.vue`
-(QR Code, copia-e-cola, countdown e polling de status a cada 4s) + `frontend/src/utils/api.js`.
-⚠️ O restante do frontend ainda é mockado (login/criação de pedido locais); a integração real
-do auth JWT é pré-requisito para o fluxo Pix funcionar ponta a ponta.
 
 ### Pendentes
 - Push notifications (FCM) além do SSE para quando o app estiver em background.

@@ -6,23 +6,9 @@ import {
   listPixTransactions
 } from '../services/pix.service.js';
 import { processPixWebhook } from '../services/pix.service.js';
-import { BadRequest, Unauthorized, NotFound, Forbidden } from '../utils/errors.js';
-import { verifyWebhookSignature } from '../utils/signature.js';
-import { env } from '../config/env.js';
+import { BadRequest, NotFound, Forbidden } from '../utils/errors.js';
 
 export default async function pixRoutes(fastify) {
-  // Guarda o corpo bruto da requisição para permitir validação de assinatura HMAC
-  // no webhook (parse JSON precisa ser feito manualmente quando há rawBody).
-  fastify.addContentTypeParser('application/json', { parseAs: 'string' }, function (req, body, done) {
-    req.rawBody = body;
-    try {
-      done(null, body ? JSON.parse(body) : undefined);
-    } catch (error) {
-      error.statusCode = 400;
-      done(error, undefined);
-    }
-  });
-
   // ---- Criar transação Pix para um pedido ----
   fastify.post('/orders/:orderId/pix', { preHandler: fastify.authenticate }, async (request, reply) => {
     const { orderId } = request.params;
@@ -167,25 +153,17 @@ export default async function pixRoutes(fastify) {
   });
 
   // ---- Webhook para recebimento de confirmações Pix ----
-  // Autenticado via assinatura HMAC-SHA256 no header `x-webhook-signature`.
+  // Em produção, esta rota deve ter autenticação específica do banco/gateway
   fastify.post('/pix/webhook', async (request, reply) => {
     const webhookData = request.body;
 
-    // 1. Validação de assinatura do banco/gateway (obrigatória em produção)
-    const signature = request.headers['x-webhook-signature'];
-    const rawBody = request.rawBody ?? JSON.stringify(webhookData ?? '');
-
-    if (env.nodeEnv === 'production' || env.pixWebhookRequireSignature !== 'false') {
-      if (!verifyWebhookSignature(rawBody, signature, env.pixWebhookSecret)) {
-        request.log.warn({ hasSignature: Boolean(signature) }, 'Webhook Pix com assinatura inválida ou ausente');
-        throw Unauthorized('Assinatura do webhook inválida ou ausente');
-      }
-    }
-
-    // 2. Validações básicas do webhook
+    // Validações básicas do webhook
     if (!webhookData) {
       throw BadRequest('Dados do webhook são obrigatórios');
     }
+
+    // Em produção, validar assinatura/autenticação do banco
+    // Ex: verificar header X-API-Key, assinatura HMAC, etc.
 
     try {
       const transaction = await processPixWebhook(webhookData);

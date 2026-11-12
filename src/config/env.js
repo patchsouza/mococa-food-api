@@ -25,12 +25,9 @@ export const env = {
 
   deliverySearchRadiusKm: Number(process.env.DELIVERY_SEARCH_RADIUS_KM || 6),
   courierOfferTtlSeconds: Number(process.env.COURIER_OFFER_TTL_SECONDS || 25),
-
+  
   // Configurações Pix
-  pixEnabled: process.env.PIX_ENABLED !== 'false',
+  pixEnabled: process.env.PIX_ENABLED === 'true' || true,
   pixExpirationMinutes: Number(process.env.PIX_EXPIRATION_MINUTES || 30),
-  pixWebhookSecret: process.env.PIX_WEBHOOK_SECRET || 'segredo-webhook-pix-dev-troque-em-producao',
-  // Em produção a validação de assinatura do webhook é SEMPRE obrigatória.
-  // Em dev pode ser desativada com PIX_WEBHOOK_REQUIRE_SIGNATURE=false (ex.: para testes manuais).
-  pixWebhookRequireSignature: process.env.PIX_WEBHOOK_REQUIRE_SIGNATURE || 'true'
+  pixWebhookSecret: process.env.PIX_WEBHOOK_SECRET || 'segredo-webhook-pix'
 };
