@@ -168,7 +168,7 @@ export async function createPixTransaction({ orderId, expiresInMinutes = 30 }) {
     key: restaurant.pixKey || 'chave-padrao@mococafood.com.br',
     keyType: restaurant.pixKeyType || 'email',
     bank: restaurant.pixBank || '001', // Banco do Brasil por padrão
-    city: restaurant.city || 'SAO PAULO'
+    city: (restaurant.address && restaurant.address.city) || 'MOCOCA'
   };
 
   // Gera o payload Pix

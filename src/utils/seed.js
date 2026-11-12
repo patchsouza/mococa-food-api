@@ -47,7 +47,11 @@ async function seed() {
       lng: -47.0089
     },
     deliveryFee: 5,
-    minOrderValue: 15
+    minOrderValue: 15,
+    // Dados Pix para testes do módulo de pagamento
+    pixKey: 'financeiro@lanchonetecentral.com.br',
+    pixKeyType: 'email',
+    pixBank: '001'
   });
 
   await Product.insertMany([

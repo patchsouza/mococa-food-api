@@ -48,16 +48,25 @@
       <p v-if="!cart.meetsMinimum" style="color:var(--primary); font-size:0.85rem; margin-bottom:12px; text-align:center;">
         Valor mínimo do pedido é {{ formatCurrency(restaurant.minOrderValue) }}
       </p>
-      <button class="btn btn-primary" :disabled="!cart.meetsMinimum" @click="confirmOrder">
-        Confirmar pedido
+      <button class="btn btn-primary" :disabled="!cart.meetsMinimum || submitting" @click="confirmOrder">
+        {{ submitting ? 'Enviando…' : 'Confirmar pedido' }}
       </button>
     </div>
+
+    <!-- Modal de pagamento Pix (QR Code + copia-e-cola + polling de status) -->
+    <PixCheckoutModal
+      v-if="pixOrderId"
+      :order-id="pixOrderId"
+      @paid="onPixPaid"
+      @closed="onPixClosed"
+    />
   </div>
 </template>
 
 <script setup>
-import { computed, reactive } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import AppHeader from '../layout/AppHeader.vue'
+import PixCheckoutModal from './PixCheckoutModal.vue'
 import { useCartStore } from '../../stores/cart'
 import { useOrdersStore } from '../../stores/orders'
 import { useNavigationStore } from '../../stores/navigation'
@@ -71,8 +80,12 @@ const restaurant = computed(() => cart.selectedRestaurant)
 const address = reactive({ street: 'Rua das Flores', number: '123', city: 'Mococa', state: 'SP' })
 const form = reactive({ payment: 'pix' })
 
+const submitting = ref(false)
+const pixOrderId = ref(null)
+
 function confirmOrder() {
-  orders.create({
+  submitting.value = true
+  const order = orders.create({
     restaurantId: restaurant.value.id,
     items: [...cart.items],
     total: cart.total,
@@ -81,7 +94,29 @@ function confirmOrder() {
     deliveryAddress: { ...address }
   })
   cart.clear()
+
+  if (form.payment === 'pix') {
+    // Abre o modal de Pix — a transação real é criada via POST /orders/:id/pix
+    pixOrderId.value = order?.id ?? null
+    submitting.value = false
+  } else {
+    submitting.value = false
+    nav.reset('cliente-home')
+    alert('Pedido enviado para a loja!')
+  }
+}
+
+function onPixPaid(transaction) {
+  pixOrderId.value = null
   nav.reset('cliente-home')
-  alert('Pedido enviado para a loja!')
+  alert(`Pagamento Pix confirmado (${transaction.transactionId})! O restaurante já foi notificado.`)
+}
+
+function onPixClosed(transaction) {
+  pixOrderId.value = null
+  nav.reset('cliente-home')
+  if (!transaction || transaction.status === 'pending') {
+    alert('O pedido ficou aguardando o pagamento Pix. Pague pelo app do banco antes que o código expire.')
+  }
 }
 </script>
