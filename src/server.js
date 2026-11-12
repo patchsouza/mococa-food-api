@@ -2,9 +2,10 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import sensible from '@fastify/sensible';
 
-import { env } from './config/env.js';
+import { env } from './config/env.js'; // já carrega 'dotenv/config' internamente
 import { connectDatabase } from './config/database.js';
 import { redis } from './config/redis.js';
+import { schedulePixExpiration } from './jobs/pixExpiration.job.js';
 
 import authPlugin from './plugins/auth.js';
 import authRoutes from './routes/auth.routes.js';
@@ -55,6 +56,11 @@ async function bootstrap() {
 
   await fastify.listen({ port: env.port, host: env.host });
   fastify.log.info(`Mococa Food API rodando em http://${env.host}:${env.port}`);
+
+  // Job periódico: expira transações Pix vencidas e cancela pedidos associados
+  if (env.pixEnabled) {
+    schedulePixExpiration(fastify.log);
+  }
 }
 
 bootstrap().catch((err) => {
