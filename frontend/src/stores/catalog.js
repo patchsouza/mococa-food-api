@@ -1,12 +1,25 @@
 import { defineStore } from 'pinia'
 import { useAuthStore } from './auth'
-import { seedRestaurants, seedMenuItems } from '../data/seed'
-import { randomId } from '../utils/formatters'
+import { restaurantApi } from '../utils/api'
+
+const normalizeRestaurant = (restaurant) => ({
+  ...restaurant,
+  id: restaurant.id || restaurant._id,
+  address: restaurant.address || {}
+})
+
+const normalizeProduct = (product, restaurantId) => ({
+  ...product,
+  id: product.id || product._id,
+  restaurantId: restaurantId || product.restaurantId || product.restaurant?._id || product.restaurant,
+  price: Number(product.price)
+})
 
 export const useCatalogStore = defineStore('catalog', {
   state: () => ({
-    restaurants: structuredClone(seedRestaurants),
-    menuItems: structuredClone(seedMenuItems)
+    restaurants: [],
+    menuItems: [],
+    error: ''
   }),
 
   getters: {
@@ -39,40 +52,85 @@ export const useCatalogStore = defineStore('catalog', {
   },
 
   actions: {
-    createRestaurant({ name, category, address }) {
-      const restaurant = {
-        id: randomId('r'),
-        name,
-        category,
-        address,
-        minOrderValue: 20,
-        deliveryFee: 5.00,
-        isOpen: true,
-        description: 'Uma nova loja em Mococa!'
+    async loadRestaurants() {
+      this.error = ''
+      try {
+        this.restaurants = (await restaurantApi.list()).map(normalizeRestaurant)
+      } catch (error) {
+        this.error = error.message
       }
-      this.restaurants.push(restaurant)
-      useAuthStore().assignRestaurant(restaurant.id)
+    },
+
+    async loadRestaurant(id) {
+      this.error = ''
+      try {
+        const data = await restaurantApi.get(id)
+        const restaurant = normalizeRestaurant(data)
+        const index = this.restaurants.findIndex((item) => item.id === restaurant.id)
+        if (index === -1) this.restaurants.push(restaurant)
+        else this.restaurants[index] = restaurant
+        this.menuItems = this.menuItems.filter((item) => item.restaurantId !== restaurant.id)
+        this.menuItems.push(...(data.menu || []).map((product) => normalizeProduct(product, restaurant.id)))
+        return restaurant
+      } catch (error) {
+        this.error = error.message
+        return null
+      }
+    },
+
+    setMyRestaurant(data) {
+      const restaurant = normalizeRestaurant(data)
+      const index = this.restaurants.findIndex((item) => item.id === restaurant.id)
+      if (index === -1) this.restaurants.push(restaurant)
+      else this.restaurants[index] = restaurant
       return restaurant
     },
 
-    toggleMyStoreStatus() {
-      if (this.myRestaurant) this.myRestaurant.isOpen = !this.myRestaurant.isOpen
+    async createRestaurant(fields) {
+      this.error = ''
+      try {
+        const restaurant = this.setMyRestaurant(await restaurantApi.create(fields))
+        useAuthStore().assignRestaurant(restaurant.id)
+        return restaurant
+      } catch (error) {
+        this.error = error.message
+        return null
+      }
     },
 
-    addMenuItem({ name, category, price }) {
+    async toggleMyStoreStatus() {
+      if (!this.myRestaurant) return
+      this.error = ''
+      try {
+        const result = await restaurantApi.toggleOpen(this.myRestaurant.id)
+        this.myRestaurant.isOpen = result.isOpen
+      } catch (error) {
+        this.error = error.message
+      }
+    },
+
+    async addMenuItem({ name, category, price }) {
       if (!this.myRestaurant || !name || !price) return
-      this.menuItems.push({
-        id: randomId('m'),
-        restaurantId: this.myRestaurant.id,
-        name,
-        category: category || 'Geral',
-        price: Number(price),
-        description: ''
-      })
+      this.error = ''
+      try {
+        const product = await restaurantApi.addProduct(this.myRestaurant.id, { name, category, price: Number(price) })
+        this.menuItems.push(normalizeProduct(product, this.myRestaurant.id))
+        return true
+      } catch (error) {
+        this.error = error.message
+        return false
+      }
     },
 
-    removeMenuItem(id) {
-      this.menuItems = this.menuItems.filter((m) => m.id !== id)
+    async removeMenuItem(id) {
+      if (!this.myRestaurant) return
+      this.error = ''
+      try {
+        await restaurantApi.deleteProduct(this.myRestaurant.id, id)
+        this.menuItems = this.menuItems.filter((item) => item.id !== id)
+      } catch (error) {
+        this.error = error.message
+      }
     }
   }
 })

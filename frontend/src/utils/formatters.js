@@ -1,4 +1,4 @@
-const PAYMENT_LABELS = { pix: 'Pix', cash: 'Dinheiro', credit_card: 'Cartão' }
+const PAYMENT_LABELS = { pix: 'Pix', cash: 'Dinheiro', credit_card: 'Cartão', dinheiro: 'Dinheiro', cartao: 'Cartão' }
 
 const STATUS_LABELS = {
   pending: 'Novo',
@@ -6,7 +6,8 @@ const STATUS_LABELS = {
   preparing: 'Preparando',
   ready: 'Pronto',
   delivering: 'A caminho',
-  completed: 'Entregue'
+  completed: 'Entregue',
+  canceled: 'Cancelado'
 }
 
 export function paymentLabel(method) {

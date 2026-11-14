@@ -1,10 +1,8 @@
 # Mococa Food — Frontend Prototype
 
-Protótipo Vue 3 do app de delivery hiperlocal de Mococa, reorganizado a partir de
-um único arquivo `index.html` de ~800 linhas em um projeto Vite modular, com
-separação clara de responsabilidades. Continua 100% offline / mockado —
-sem chamadas a API real — pensado para revisão de UI e fluxo antes da
-integração com o backend Fastify.
+Frontend Vue 3 do app de delivery hiperlocal de Mococa, organizado como projeto
+Vite modular. Autenticação, catálogo, pedidos, operação de loja, entregas e Pix
+consomem a API Fastify.
 
 ## Como rodar
 
@@ -13,6 +11,17 @@ npm install
 npm run dev      # ambiente de desenvolvimento, http://localhost:5173
 npm run build    # build de produção em dist/
 ```
+
+## API
+
+Por padrão, o frontend usa `https://perpetual-cooperation-development.up.railway.app`.
+Para trocar de instância, defina `VITE_API_URL` como a URL raiz do backend, sem
+`/health` ou `/api`. A verificação de saúde usa `/health`; os recursos usam
+`/api`.
+
+O catálogo mostra apenas restaurantes cadastrados e aprovados na instância
+configurada. Login e cadastro usam contas reais da API; não há acesso de
+demonstração com usuários locais.
 
 ## O que mudou em relação ao arquivo único
 
@@ -23,8 +32,8 @@ npm run build    # build de produção em dist/
 | Views alternadas via `v-if` empilhados no mesmo arquivo | Um componente por tela, resolvido dinamicamente em `App.vue` |
 | Estado global solto em `ref`/`reactive` dentro do `setup()` | Stores Pinia (fonte única da verdade, testável isoladamente) |
 | Helpers (`paymentLabel`, `formatAddress`...) redeclarados no `return` | `src/utils/formatters.js`, funções puras e importáveis |
-| Dados mockados inline no `setup()` | `src/data/seed.js` |
-| `offerDistance` chamava `Math.random()` a cada render (valor "pisca" na tela) | Distância derivada de um hash determinístico do id do pedido |
+| Dados mockados inline no `setup()` | Estado remoto carregado pelos stores |
+| Chamadas HTTP distribuídas pela interface | `src/utils/api.js` centraliza autenticação e recursos |
 
 ## Estrutura de pastas
 
@@ -69,9 +78,7 @@ originais — só que reutilizáveis em qualquer componente sem precisar
   deep-link para um restaurante específico, etc.) — hoje ela imita o
   comportamento de navegação de um app nativo por decisão de escopo, não por
   limitação técnica.
-- Ligar `stores/*` ao backend Fastify/Mongoose/Redis real (que já expõe os
-  contratos de restaurante, pedido e despacho), substituindo `data/seed.js`
-  por chamadas HTTP/SSE — a UI não deve precisar mudar, só a camada de dados
-  dentro das actions dos stores.
+- Usar SSE no acompanhamento de pedidos, substituindo a consulta periódica
+  atual quando essa atualização em tempo real for necessária.
 - Extrair `src/assets/base.css` para tokens compartilhados com o
   MotoMococa, já que os dois produtos miram o mesmo público em Mococa.

@@ -7,8 +7,9 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useNavigationStore } from './stores/navigation'
+import { useAuthStore } from './stores/auth'
 
 import LoginView from './components/auth/LoginView.vue'
 import RegisterView from './components/auth/RegisterView.vue'
@@ -20,6 +21,7 @@ import LojaDashboardView from './components/loja/LojaDashboardView.vue'
 import MotoDashboardView from './components/moto/MotoDashboardView.vue'
 
 const nav = useNavigationStore()
+const auth = useAuthStore()
 
 // Maps each named "screen" in the navigation stack to its component.
 // Adding a new screen only ever requires an entry here + one file in src/components.
@@ -35,4 +37,6 @@ const SCREENS = {
 }
 
 const currentScreen = computed(() => SCREENS[nav.view])
+
+onMounted(() => auth.restoreSession())
 </script>

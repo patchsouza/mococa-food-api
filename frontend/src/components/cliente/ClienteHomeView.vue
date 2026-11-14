@@ -23,6 +23,10 @@
         <span class="food-feature__stamp" aria-hidden="true">Feito<br>na cidade</span>
       </section>
 
+      <p v-if="catalog.error || orders.error" role="alert" style="color:var(--primary);">
+        {{ catalog.error || orders.error }}
+      </p>
+
       <!-- Busca -->
       <div v-if="catalog.openRestaurants.length > 0" class="search">
         <i class="fas fa-search search__icon" aria-hidden="true"></i>
@@ -125,7 +129,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import AppHeader from '../layout/AppHeader.vue'
 import EmptyState from '../layout/EmptyState.vue'
 import OrderTracker from './OrderTracker.vue'
@@ -198,10 +202,17 @@ function categoryEmoji(category) {
   return found ? found[1] : '🍽️'
 }
 
-function selectRestaurant(restaurant) {
+async function selectRestaurant(restaurant) {
+  const loaded = await catalog.loadRestaurant(restaurant.id)
+  if (!loaded) return
   cart.selectRestaurant(restaurant.id)
   nav.navigateTo('cliente-restaurant')
 }
+
+onMounted(() => {
+  catalog.loadRestaurants()
+  orders.loadMine()
+})
 </script>
 
 <style scoped>

@@ -37,8 +37,19 @@
           <label for="register-email">E-mail</label>
           <input id="register-email" v-model="form.email" type="email" autocomplete="email" placeholder="seu@email.com">
         </div>
+        <div class="input-group">
+          <label for="register-password">Senha</label>
+          <input id="register-password" v-model="form.password" type="password" autocomplete="new-password" minlength="6" placeholder="Pelo menos 6 caracteres">
+        </div>
+        <div class="input-group">
+          <label for="register-phone">Telefone</label>
+          <input id="register-phone" v-model="form.phone" type="tel" autocomplete="tel" placeholder="(19) 99999-9999">
+        </div>
 
-        <button class="btn btn-primary auth-submit" @click="auth.register(form)">Criar conta</button>
+        <p v-if="auth.error" class="auth-error" role="alert">{{ auth.error }}</p>
+        <button class="btn btn-primary auth-submit" :disabled="auth.loading" @click="auth.register(form)">
+          {{ auth.loading ? 'Criando conta...' : 'Criar conta' }}
+        </button>
         <p class="auth-switch">
           <a href="#" @click.prevent="nav.goBack()"><i class="fas fa-arrow-left" aria-hidden="true"></i> Voltar para login</a>
         </p>
@@ -54,5 +65,5 @@ import { useNavigationStore } from '../../stores/navigation'
 
 const auth = useAuthStore()
 const nav = useNavigationStore()
-const form = reactive({ name: '', email: '', role: 'cliente' })
+const form = reactive({ name: '', email: '', password: '', phone: '', role: 'cliente' })
 </script>

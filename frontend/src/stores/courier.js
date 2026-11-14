@@ -1,17 +1,6 @@
 import { defineStore } from 'pinia'
-import { useAuthStore } from './auth'
-import { useOrdersStore } from './orders'
-
-/**
- * Deterministic stand-in for a real routing-engine distance.
- * Hashing the order id (instead of calling Math.random() on every render,
- * like the original prototype did) keeps the number stable across re-renders.
- */
-function fakeDistanceKm(orderId) {
-  let hash = 0
-  for (const char of orderId) hash = (hash * 31 + char.charCodeAt(0)) % 1000
-  return 1 + (hash / 1000) * 3 // 1km – 4km
-}
+import { courierApi } from '../utils/api'
+import { normalizeOrder } from './orders'
 
 export const useCourierStore = defineStore('courier', {
   state: () => ({
@@ -19,50 +8,93 @@ export const useCourierStore = defineStore('courier', {
     balance: 0,
     rating: 4.8,
     radiusKm: 5,
-    activeDeliveryId: null
+    activeDelivery: null,
+    offers: [],
+    error: ''
   }),
 
   getters: {
-    activeDelivery(state) {
-      if (!state.activeDeliveryId) return null
-      return useOrdersStore().findById(state.activeDeliveryId) ?? null
-    },
-
-    availableDeliveries() {
-      return useOrdersStore().availableDeliveries
-    }
+    availableDeliveries: (state) => state.offers
   },
 
   actions: {
-    setAvailable(value) {
-      this.available = value
+    async loadDashboard() {
+      this.error = ''
+      try {
+        const data = await courierApi.dashboard()
+        this.available = data.courier.isAvailable
+        this.balance = data.courier.balance || 0
+        this.rating = data.courier.rating || 0
+        this.activeDelivery = data.activeDeliveries[0] ? normalizeOrder(data.activeDeliveries[0]) : null
+      } catch (error) {
+        this.error = error.message
+      }
     },
 
-    offerDistance(order) {
-      return fakeDistanceKm(order.id)
+    async loadOffers() {
+      this.error = ''
+      try {
+        this.offers = (await courierApi.offers()).map(normalizeOrder)
+      } catch (error) {
+        this.error = error.message
+      }
     },
 
-    acceptDelivery(order) {
-      const courier = useAuthStore().currentUser
-      useOrdersStore().assignCourier(order.id, courier)
-      this.activeDeliveryId = order.id
+    async setAvailable(value) {
+      this.error = ''
+      try {
+        if (value) {
+          if (!navigator.geolocation) throw new Error('Este navegador não oferece acesso à localização.')
+          const position = await new Promise((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, () => reject(new Error('Permita o acesso à localização para receber corridas.')))
+          })
+          await courierApi.updateLocation(position.coords.latitude, position.coords.longitude)
+        }
+        const result = await courierApi.setAvailability(value)
+        this.available = result.isAvailable
+        if (this.available) await this.loadOffers()
+      } catch (error) {
+        this.error = error.message
+      }
     },
 
-    rejectDelivery(_orderId) {
-      // No-op for now: in a real backend this would put the offer back in the
-      // dispatch pool / mark it as declined by this courier.
+    async acceptDelivery(order) {
+      this.error = ''
+      try {
+        this.activeDelivery = normalizeOrder(await courierApi.accept(order.id))
+        this.available = false
+        this.offers = this.offers.filter((offer) => offer.id !== order.id)
+      } catch (error) {
+        this.error = error.message
+        await this.loadOffers()
+      }
     },
 
-    confirmDelivery() {
-      if (!this.activeDeliveryId) return
-      const order = this.activeDelivery
-      useOrdersStore().completeDelivery(this.activeDeliveryId)
-      if (order) this.balance += order.deliveryFee
-      this.activeDeliveryId = null
+    async rejectDelivery(orderId) {
+      this.error = ''
+      try {
+        await courierApi.reject(orderId)
+        this.offers = this.offers.filter((offer) => offer.id !== orderId)
+      } catch (error) {
+        this.error = error.message
+      }
+    },
+
+    async confirmDelivery() {
+      if (!this.activeDelivery) return
+      this.error = ''
+      try {
+        await courierApi.complete(this.activeDelivery.id)
+        this.activeDelivery = null
+        await this.loadDashboard()
+      } catch (error) {
+        this.error = error.message
+      }
     },
 
     reset() {
-      this.activeDeliveryId = null
+      this.activeDelivery = null
+      this.offers = []
     }
   }
 })

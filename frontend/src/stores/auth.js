@@ -3,53 +3,89 @@ import { useNavigationStore } from './navigation'
 import { useCatalogStore } from './catalog'
 import { useCartStore } from './cart'
 import { useCourierStore } from './courier'
+import { authApi, restaurantApi, setAuthToken } from '../utils/api'
 
-const MOCK_USERS = {
-  cliente: { id: 'u1', name: 'João Cliente', role: 'cliente' },
-  loja: { id: 'u2', name: 'Maria Dona', role: 'loja' },
-  moto: { id: 'u3', name: 'Pedro Moto', role: 'moto' }
+const ROLE_TO_VIEW = {
+  customer: 'cliente-home',
+  restaurant_owner: 'loja-dashboard',
+  courier: 'moto-dashboard'
+}
+
+const ROLE_TO_UI = {
+  customer: 'cliente',
+  restaurant_owner: 'loja',
+  courier: 'moto'
+}
+
+function normalizeUser(user) {
+  return { ...user, id: user.id || user._id, role: ROLE_TO_UI[user.role] || user.role, apiRole: user.role }
 }
 
 export const useAuthStore = defineStore('auth', {
   state: () => ({
-    currentUser: null
+    currentUser: null,
+    error: '',
+    loading: false
   }),
 
   actions: {
-    /** Real form submit — kept mocked here since there's no backend wired up yet. */
-    login() {
-      this.currentUser = { ...MOCK_USERS.cliente }
-      useNavigationStore().reset('cliente-home')
+    async login(credentials) {
+      this.error = ''
+      this.loading = true
+      try {
+        const result = await authApi.login(credentials)
+        setAuthToken(result.token)
+        await this.startSession(result.user)
+      } catch (error) {
+        this.error = error.message
+      } finally {
+        this.loading = false
+      }
     },
 
-    quickLogin(role) {
-      const nav = useNavigationStore()
-
-      if (role === 'loja') {
-        const catalog = useCatalogStore()
-        const firstRestaurant = catalog.restaurants[0]
-        this.currentUser = { ...MOCK_USERS.loja, restaurantId: firstRestaurant?.id ?? null }
-        nav.reset('loja-dashboard')
-        return
+    async register({ name, email, password, phone, role }) {
+      this.error = ''
+      this.loading = true
+      try {
+        const apiRole = { cliente: 'customer', loja: 'restaurant_owner', moto: 'courier' }[role] || 'customer'
+        const result = await authApi.register({ name, email, password, phone, role: apiRole })
+        setAuthToken(result.token)
+        await this.startSession(result.user)
+      } catch (error) {
+        this.error = error.message
+      } finally {
+        this.loading = false
       }
-
-      if (role === 'moto') {
-        this.currentUser = { ...MOCK_USERS.moto }
-        nav.reset('moto-dashboard')
-        return
-      }
-
-      this.currentUser = { ...MOCK_USERS.cliente }
-      nav.reset('cliente-home')
     },
 
-    register({ name, role }) {
-      this.currentUser = { id: 'u_new', name, role, restaurantId: null }
-      const nav = useNavigationStore()
+    async restoreSession() {
+      if (typeof localStorage === 'undefined' || !localStorage.getItem('mococa-token')) return
+      try {
+        const user = await authApi.me()
+        await this.startSession(user)
+      } catch {
+        setAuthToken(null)
+      }
+    },
 
-      if (role === 'loja') nav.reset('loja-setup')
-      else if (role === 'moto') nav.reset('moto-dashboard')
-      else nav.reset('cliente-home')
+    async startSession(user) {
+      this.currentUser = normalizeUser(user)
+      const nav = useNavigationStore()
+      if (user.role === 'restaurant_owner') {
+        const restaurants = await restaurantApi.mine()
+        const mine = restaurants[0]
+        if (mine) {
+          const catalog = useCatalogStore()
+          const restaurant = catalog.setMyRestaurant(mine)
+          this.currentUser.restaurantId = restaurant.id
+          await catalog.loadRestaurant(restaurant.id)
+          nav.reset('loja-dashboard')
+          return
+        }
+        nav.reset('loja-setup')
+        return
+      }
+      nav.reset(ROLE_TO_VIEW[user.role] || 'cliente-home')
     },
 
     /** Called by the catalog store once a new store owner finishes onboarding. */
@@ -59,6 +95,8 @@ export const useAuthStore = defineStore('auth', {
 
     logout() {
       this.currentUser = null
+      this.error = ''
+      setAuthToken(null)
       useCartStore().clear()
       useCourierStore().reset()
       useNavigationStore().reset('login')

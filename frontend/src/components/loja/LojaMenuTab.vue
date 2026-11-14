@@ -125,6 +125,7 @@
           </span>
         </div>
       </div>
+      <p v-if="catalog.error" role="alert" style="color:#c62828;">{{ catalog.error }}</p>
 
       <!-- Estado vazio -->
       <div v-if="catalog.myMenu.length === 0" class="empty-container">
@@ -214,7 +215,7 @@ const newItem = reactive({
   price: 0
 })
 
-function submit() {
+async function submit() {
   const name = newItem.name.trim()
   const category = newItem.category.trim()
   const price = Number(newItem.price)
@@ -223,11 +224,12 @@ function submit() {
     return
   }
 
-  catalog.addMenuItem({
+  const saved = await catalog.addMenuItem({
     name,
     category,
     price
   })
+  if (!saved) return
 
   // Limpa o formulário após o cadastro
   newItem.name = ''

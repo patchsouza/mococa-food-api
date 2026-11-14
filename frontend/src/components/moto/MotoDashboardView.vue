@@ -10,10 +10,11 @@
         </p>
       </div>
       <label class="switch">
-        <input v-model="courier.available" type="checkbox">
+        <input :checked="courier.available" type="checkbox" @change="courier.setAvailable($event.target.checked)">
         <span class="slider"></span>
       </label>
     </div>
+    <p v-if="courier.error" role="alert" style="padding:0 16px; color:var(--primary);">{{ courier.error }}</p>
 
     <div style="padding: 0 16px;">
       <div class="stats-grid">
@@ -31,7 +32,7 @@
         <h3 style="margin-bottom:12px;">Rota em andamento</h3>
         <p style="font-size:0.9rem; margin-bottom:8px;"><strong>Pedido #{{ courier.activeDelivery.id.slice(-4) }}</strong></p>
         <p style="font-size:0.85rem; margin-bottom:4px;">
-          <i class="fas fa-store" style="width:20px;"></i> Coletar em: {{ catalog.getRestaurantName(courier.activeDelivery.restaurantId) }}
+          <i class="fas fa-store" style="width:20px;"></i> Coletar em: {{ courier.activeDelivery.restaurantName || catalog.getRestaurantName(courier.activeDelivery.restaurantId) }}
         </p>
         <p style="font-size:0.85rem; margin-bottom:12px;">
           <i class="fas fa-map-marker-alt" style="width:20px;"></i> Entregar para: {{ formatAddress(courier.activeDelivery.deliveryAddress) }}
@@ -51,9 +52,8 @@
           <div v-for="o in courier.availableDeliveries" :key="o.id" class="card">
             <div style="display:flex; justify-content:space-between; margin-bottom:12px;">
               <h3 style="font-size:1rem;">#{{ o.id.slice(-4) }}</h3>
-              <span style="font-size:0.85rem; font-weight:600; color:var(--success);">{{ courier.offerDistance(o).toFixed(1) }} km</span>
             </div>
-            <p style="font-size:0.85rem; margin-bottom:4px;"><i class="fas fa-store" style="width:20px;"></i> {{ catalog.getRestaurantName(o.restaurantId) }}</p>
+            <p style="font-size:0.85rem; margin-bottom:4px;"><i class="fas fa-store" style="width:20px;"></i> {{ o.restaurantName || catalog.getRestaurantName(o.restaurantId) }}</p>
             <p style="font-size:0.85rem; margin-bottom:12px;"><i class="fas fa-map-marker-alt" style="width:20px;"></i> {{ formatAddress(o.deliveryAddress) }}</p>
             <div style="display:flex; justify-content:space-between; font-weight:700; margin-bottom:12px;">
               <span>Taxa</span>
@@ -71,6 +71,7 @@
 </template>
 
 <script setup>
+import { onMounted, onBeforeUnmount } from 'vue'
 import AppHeader from '../layout/AppHeader.vue'
 import EmptyState from '../layout/EmptyState.vue'
 import { useAuthStore } from '../../stores/auth'
@@ -81,4 +82,16 @@ import { formatAddress, formatCurrency } from '../../utils/formatters'
 const auth = useAuthStore()
 const catalog = useCatalogStore()
 const courier = useCourierStore()
+
+let offersTimer = null
+
+onMounted(async () => {
+  await courier.loadDashboard()
+  await courier.loadOffers()
+  offersTimer = setInterval(() => {
+    if (courier.available) courier.loadOffers()
+  }, 10000)
+})
+
+onBeforeUnmount(() => clearInterval(offersTimer))
 </script>

@@ -32,6 +32,8 @@
 
 <script setup>
 import { paymentLabel, formatCurrency } from '../../utils/formatters'
+import { onMounted, onBeforeUnmount } from 'vue'
+import { useOrdersStore } from '../../stores/orders'
 
 const props = defineProps({
   order: { type: Object, required: true }
@@ -39,9 +41,18 @@ const props = defineProps({
 
 defineEmits(['cancel'])
 
+const orders = useOrdersStore()
+let refreshTimer = null
+
 const STAGE_ORDER = ['accepted', 'preparing', 'ready', 'delivering', 'completed']
 
 function reached(stage) {
   return STAGE_ORDER.slice(STAGE_ORDER.indexOf(stage)).includes(props.order.status)
 }
+
+onMounted(() => {
+  refreshTimer = setInterval(() => orders.refresh(props.order.id), 5000)
+})
+
+onBeforeUnmount(() => clearInterval(refreshTimer))
 </script>

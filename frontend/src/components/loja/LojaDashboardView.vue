@@ -211,7 +211,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 
 import AppHeader from '../layout/AppHeader.vue'
 import LojaOrdersTab from './LojaOrdersTab.vue'
@@ -227,6 +227,15 @@ const catalog = useCatalogStore()
 const orders = useOrdersStore()
 
 const tab = ref('pedidos')
+
+let refreshTimer = null
+
+onMounted(() => {
+  orders.loadDashboard(catalog.myRestaurant.id)
+  refreshTimer = setInterval(() => orders.loadDashboard(catalog.myRestaurant.id), 15000)
+})
+
+onBeforeUnmount(() => clearInterval(refreshTimer))
 </script>
 
 <style scoped>

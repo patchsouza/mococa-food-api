@@ -27,20 +27,15 @@
           <input id="login-password" v-model="form.password" type="password" placeholder="Sua senha" autocomplete="current-password">
         </div>
 
-        <button class="btn btn-primary auth-submit" @click="auth.login()">Entrar</button>
+        <p v-if="auth.error" class="auth-error" role="alert">{{ auth.error }}</p>
+        <button class="btn btn-primary auth-submit" :disabled="auth.loading" @click="auth.login(form)">
+          {{ auth.loading ? 'Entrando...' : 'Entrar' }}
+        </button>
         <p class="auth-switch">
           Ainda não tem conta?
           <a href="#" @click.prevent="nav.navigateTo('register')">Criar conta</a>
         </p>
 
-        <div class="quick-test">
-          <p>ACESSO DE DEMONSTRAÇÃO</p>
-          <div class="quick-test-btns">
-            <button type="button" @click="auth.quickLogin('cliente')"><i class="fas fa-user" aria-hidden="true"></i> Cliente</button>
-            <button type="button" @click="auth.quickLogin('loja')"><i class="fas fa-store" aria-hidden="true"></i> Loja</button>
-            <button type="button" @click="auth.quickLogin('moto')"><i class="fas fa-motorcycle" aria-hidden="true"></i> Entrega</button>
-          </div>
-        </div>
       </section>
     </div>
   </div>

@@ -51,10 +51,24 @@
       <!-- Endereço -->
       <section class="card" aria-label="Endereço de entrega">
         <h3 class="section-title"><i class="fas fa-map-marker-alt" aria-hidden="true"></i> Entregar em</h3>
-        <p class="address">
-          <strong>{{ address.street }}, {{ address.number }}</strong>
-          <span>{{ address.city }}/{{ address.state }}</span>
-        </p>
+        <div class="address-fields">
+          <div class="input-group">
+            <label for="delivery-street">Rua</label>
+            <input id="delivery-street" v-model.trim="address.street" autocomplete="street-address" placeholder="Rua e bairro">
+          </div>
+          <div class="input-group">
+            <label for="delivery-number">Número</label>
+            <input id="delivery-number" v-model.trim="address.number" inputmode="numeric" placeholder="Número">
+          </div>
+          <div class="input-group">
+            <label for="delivery-city">Cidade</label>
+            <input id="delivery-city" v-model.trim="address.city" autocomplete="address-level2" placeholder="Cidade">
+          </div>
+          <div class="input-group">
+            <label for="delivery-state">Estado</label>
+            <input id="delivery-state" v-model.trim="address.state" autocomplete="address-level1" maxlength="2" placeholder="UF">
+          </div>
+        </div>
       </section>
 
       <!-- Pagamento -->
@@ -117,7 +131,7 @@
         <button
           type="button"
           class="btn btn-primary checkout-bar__btn"
-          :disabled="!cart.meetsMinimum || submitting"
+          :disabled="!cart.meetsMinimum || !addressComplete || submitting"
           @click="confirmOrder"
         >
           <i v-if="!submitting && form.payment === 'pix'" class="fas fa-qrcode" aria-hidden="true"></i>
@@ -159,11 +173,12 @@ const orders = useOrdersStore()
 const nav = useNavigationStore()
 
 const restaurant = computed(() => cart.selectedRestaurant)
-const address = reactive({ street: 'Rua das Flores', number: '123', city: 'Mococa', state: 'SP' })
+const address = reactive({ street: '', number: '', city: 'Mococa', state: 'SP' })
 const form = reactive({ payment: 'pix' })
 
 const submitting = ref(false)
 const pixOrderId = ref(null)
+const addressComplete = computed(() => Boolean(address.street && address.number && address.city && address.state))
 
 const paymentOptions = [
   { value: 'pix', label: 'Pix', hint: 'Aprovação na hora', icon: 'fas fa-qrcode' },
@@ -186,18 +201,17 @@ const submitLabel = computed(() => {
   return form.payment === 'pix' ? 'Pagar com Pix' : 'Confirmar pedido'
 })
 
-function confirmOrder() {
-  if (submitting.value || !cart.meetsMinimum) return
+async function confirmOrder() {
+  if (submitting.value || !cart.meetsMinimum || !addressComplete.value) return
   submitting.value = true
   try {
-    const order = orders.create({
+    const order = await orders.create({
       restaurantId: restaurant.value.id,
       items: [...cart.items],
-      total: cart.total,
-      deliveryFee: restaurant.value.deliveryFee,
       paymentMethod: form.payment,
       deliveryAddress: { ...address }
     })
+    if (!order) return
     cart.clear()
 
     if (form.payment === 'pix') {
@@ -346,6 +360,11 @@ function onPixClosed(transaction) {
   gap: 2px;
   font-size: 0.9rem;
   color: var(--text-light, #888);
+}
+.address-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(90px, 1fr);
+  gap: 8px 12px;
 }
 .address strong {
   color: inherit;
