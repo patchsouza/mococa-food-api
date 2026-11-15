@@ -88,7 +88,7 @@ export async function listOffersForCourier(courierId) {
 
 // Entregador aceita a corrida — usa um lock distribuído (SET NX) para garantir
 // que apenas um entregador consiga fechar o pedido em caso de corrida simultânea.
-export async function acceptDelivery({ orderId, courierId }) {
+export async function acceptDelivery({ orderId, courierId, logger }) {
   const lockKey = RedisKeys.orderAcceptLock(orderId);
   const acquired = await redis.set(lockKey, String(courierId), 'NX', 'EX', 10);
 
@@ -111,18 +111,25 @@ export async function acceptDelivery({ orderId, courierId }) {
     order.estimatedDeliveryAt = new Date(Date.now() + 30 * 60 * 1000);
     await order.save();
 
-    // Remove o entregador da disponibilidade e limpa a fila de ofertas dele
-    await redis.srem(RedisKeys.courierAvailableSet, String(courierId));
-    await redis.del(RedisKeys.courierOffers(courierId));
-
-    await publishOrderUpdate(order._id, {
-      status: 'in_delivery',
-      message: 'Entregador a caminho do restaurante'
-    });
+    const sideEffects = await Promise.allSettled([
+      redis.srem(RedisKeys.courierAvailableSet, String(courierId)),
+      redis.del(RedisKeys.courierOffers(courierId)),
+      publishOrderUpdate(order._id, {
+        status: 'in_delivery',
+        message: 'Entregador a caminho do restaurante'
+      })
+    ]);
+    sideEffects
+      .filter((result) => result.status === 'rejected')
+      .forEach((result) => logger?.error({ err: result.reason, orderId }, 'Falha em tarefa auxiliar após aceitar corrida'));
 
     return order;
   } finally {
-    await redis.del(lockKey);
+    try {
+      await redis.del(lockKey);
+    } catch (error) {
+      logger?.error({ err: error, orderId }, 'Falha ao liberar lock de aceitação da corrida');
+    }
   }
 }
 

@@ -37,7 +37,11 @@ export default async function deliveryRoutes(fastify) {
   });
 
   fastify.post('/deliveries/:orderId/accept', courierOnly, async (request, reply) => {
-    const order = await acceptDelivery({ orderId: request.params.orderId, courierId: request.user.sub });
+    const order = await acceptDelivery({
+      orderId: request.params.orderId,
+      courierId: request.user.sub,
+      logger: request.log
+    });
     reply.send(order);
   });
 
