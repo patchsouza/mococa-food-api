@@ -25,6 +25,13 @@ const fastify = Fastify({
   }
 });
 
+const defaultJsonParser = fastify.getDefaultJsonParser('error', 'error');
+fastify.removeContentTypeParser('application/json');
+fastify.addContentTypeParser('application/json', { parseAs: 'string' }, (request, body, done) => {
+  if (body.length === 0) return done(null, {});
+  defaultJsonParser(request, body, done);
+});
+
 // --- Tratamento centralizado de erros ---
 fastify.setErrorHandler((error, request, reply) => {
   if (error instanceof HttpError) {
@@ -32,6 +39,9 @@ fastify.setErrorHandler((error, request, reply) => {
   }
   if (error.validation) {
     return reply.code(400).send({ error: 'Dados inválidos', details: error.validation });
+  }
+  if (error.statusCode >= 400 && error.statusCode < 500) {
+    return reply.code(error.statusCode).send({ error: error.message });
   }
   request.log.error(error);
   reply.code(500).send({ error: 'Erro interno do servidor' });
