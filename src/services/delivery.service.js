@@ -58,9 +58,15 @@ export async function enqueueDeliveryOffer(order) {
   }
 
   const pipeline = redis.pipeline();
+  const offerTtlSeconds = Math.max(
+    env.courierOfferTtlSeconds,
+    Math.ceil(env.deliveryOfferRetryIntervalMs / 1000) + 10
+  );
   for (const courierId of nearbyCouriers) {
-    pipeline.lpush(RedisKeys.courierOffers(courierId), String(order._id));
-    pipeline.expire(RedisKeys.courierOffers(courierId), env.courierOfferTtlSeconds);
+    const offersKey = RedisKeys.courierOffers(courierId);
+    pipeline.lrem(offersKey, 0, String(order._id));
+    pipeline.lpush(offersKey, String(order._id));
+    pipeline.expire(offersKey, offerTtlSeconds);
   }
   await pipeline.exec();
 

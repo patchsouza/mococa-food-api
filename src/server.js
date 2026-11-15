@@ -6,6 +6,7 @@ import { env } from './config/env.js'; // já carrega 'dotenv/config' internamen
 import { connectDatabase } from './config/database.js';
 import { redis } from './config/redis.js';
 import { schedulePixExpiration } from './jobs/pixExpiration.job.js';
+import { scheduleDeliveryOfferRetry } from './jobs/deliveryOfferRetry.job.js';
 
 import authPlugin from './plugins/auth.js';
 import authRoutes from './routes/auth.routes.js';
@@ -61,6 +62,8 @@ async function bootstrap() {
   if (env.pixEnabled) {
     schedulePixExpiration(fastify.log);
   }
+
+  scheduleDeliveryOfferRetry(fastify.log);
 }
 
 bootstrap().catch((err) => {

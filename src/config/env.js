@@ -25,6 +25,7 @@ export const env = {
 
   deliverySearchRadiusKm: Number(process.env.DELIVERY_SEARCH_RADIUS_KM || 6),
   courierOfferTtlSeconds: Number(process.env.COURIER_OFFER_TTL_SECONDS || 25),
+  deliveryOfferRetryIntervalMs: Number(process.env.DELIVERY_OFFER_RETRY_INTERVAL_MS || 120_000),
   
   // Configurações Pix
   pixEnabled: process.env.PIX_ENABLED === 'true' || true,
