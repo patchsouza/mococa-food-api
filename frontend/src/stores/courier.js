@@ -8,6 +8,7 @@ export const useCourierStore = defineStore('courier', {
     balance: 0,
     rating: 4.8,
     radiusKm: 5,
+    acceptingOrderId: null,
     activeDelivery: null,
     offers: [],
     error: ''
@@ -59,14 +60,20 @@ export const useCourierStore = defineStore('courier', {
     },
 
     async acceptDelivery(order) {
+      if (this.acceptingOrderId) return
+
       this.error = ''
+      this.acceptingOrderId = order.id
       try {
         this.activeDelivery = normalizeOrder(await courierApi.accept(order.id))
         this.available = false
         this.offers = this.offers.filter((offer) => offer.id !== order.id)
       } catch (error) {
-        this.error = error.message
-        await this.loadOffers()
+        const acceptError = error.message
+        await Promise.all([this.loadOffers(), this.loadDashboard()])
+        if (this.activeDelivery?.id !== order.id) this.error = acceptError
+      } finally {
+        this.acceptingOrderId = null
       }
     },
 
@@ -95,6 +102,7 @@ export const useCourierStore = defineStore('courier', {
     reset() {
       this.activeDelivery = null
       this.offers = []
+      this.acceptingOrderId = null
     }
   }
 })

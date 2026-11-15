@@ -60,7 +60,14 @@
               <span style="color:var(--success);">{{ formatCurrency(o.deliveryFee) }}</span>
             </div>
             <div style="display:flex; gap:8px;">
-              <button class="btn btn-sm btn-success" style="flex:1;" @click="courier.acceptDelivery(o)">Aceitar corrida</button>
+              <button
+                class="btn btn-sm btn-success"
+                style="flex:1;"
+                :disabled="Boolean(courier.acceptingOrderId)"
+                @click="courier.acceptDelivery(o)"
+              >
+                {{ courier.acceptingOrderId === o.id ? 'Aceitando...' : 'Aceitar corrida' }}
+              </button>
               <button class="btn btn-sm btn-secondary" @click="courier.rejectDelivery(o.id)">Recusar</button>
             </div>
           </div>
