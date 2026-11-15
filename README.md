@@ -1,12 +1,12 @@
 # Mococa Food API
 
-API completa para um app de pedidos de comida, construída com **Bun** (runtime), **Fastify** (servidor HTTP), **MongoDB/Mongoose** (dados) e **Redis** (cache, geolocalização, filas de oferta de corrida e tempo real).
+API para um app de pedidos de comida, construída com **Node.js**, **Fastify**, **MongoDB/Mongoose** e **Redis** (cache, geolocalização, filas de oferta de corrida e tempo real).
 
 ## Stack e por quê
 
 | Peça | Uso |
 |---|---|
-| **Bun** | Runtime JS, instala pacotes e roda o servidor. `Bun.password` é usado para hash de senha (Argon2), sem dependências nativas extras. |
+| **Node.js** | Runtime JavaScript e execução da API e dos scripts. |
 | **Fastify** | Servidor HTTP, rotas, plugins (`@fastify/jwt`, `@fastify/cors`). |
 | **MongoDB (Mongoose)** | Persistência: usuários, restaurantes, produtos, pedidos. |
 | **Redis (ioredis)** | 4 usos concretos: <br>1. **Cache** de listagem/detalhe de restaurante e cardápio (cache-aside). <br>2. **GEO** (`GEOADD`/`GEOSEARCH`) para localização ao vivo dos entregadores e matching por proximidade. <br>3. **Lock distribuído** (`SET NX EX`) para impedir que dois entregadores aceitem a mesma corrida. <br>4. **Pub/Sub** para notificar o cliente em tempo real (SSE) sobre o status do pedido. |
@@ -17,9 +17,9 @@ API completa para um app de pedidos de comida, construída com **Bun** (runtime)
 cp .env.example .env
 # ajuste MONGO_URI e REDIS_URL se necessário
 
-bun install
-bun run seed     # popula dados de teste (dono, cliente, entregador, restaurante)
-bun run dev      # inicia com watch em http://localhost:3000
+npm install
+npm run seed     # popula dados de teste (dono, cliente, entregador, restaurante)
+npm run dev      # inicia em http://localhost:3000
 ```
 
 Requer um MongoDB e um Redis rodando (local ou containers):
@@ -36,7 +36,36 @@ Todas as rotas privadas usam **JWT** via header:
 Authorization: Bearer <token>
 ```
 
-Papéis (`role`): `customer`, `restaurant_owner`, `courier`, `admin`.
+Papéis de usuário (`role`): `customer`, `restaurant_owner`, `courier`. Administradores pertencem à collection `admins`, autenticam-se separadamente e não podem ser criados pelo cadastro público.
+
+## Área administrativa
+
+Crie o primeiro admin por ambiente seguro, sem endpoint público de cadastro:
+
+```bash
+export ADMIN_NAME="Admin Mococa"
+export ADMIN_EMAIL="admin@seudominio.com"
+read -rsp "Senha administrativa: " ADMIN_PASSWORD; echo
+export ADMIN_PASSWORD
+npm run admin:create
+unset ADMIN_PASSWORD
+```
+
+O token de `POST /api/admin/auth/login` identifica e revalida um documento da collection `admins` em cada requisição; `POST /api/admin/auth/logout` revoga as sessões anteriores desse admin. Após a atualização da autenticação, usuários comuns devem entrar novamente para receber um token com o novo tipo de principal. As ações ficam em `/api/admin/audit-logs`.
+
+| Método | Rota | Descrição |
+|---|---|---|
+| GET | `/api/admin/dashboard` | Resumo operacional e pedidos recentes |
+| GET/PATCH | `/api/admin/users`, `/api/admin/users/:id/status` | Consulta e ativa/desativa contas comuns |
+| GET/PATCH | `/api/admin/restaurants`, `/api/admin/restaurants/:id/status` | Consulta, aprova e ativa/desativa lojas |
+| GET/POST/PATCH/DELETE | `/api/admin/coupons` | Emite, altera e cancela cupons |
+| GET/POST/PATCH/DELETE | `/api/admin/service-areas` | Administra cidades e polígonos GeoJSON |
+| GET/POST | `/api/admin/payouts`, `/api/admin/payouts/:id/decision` | Consulta e aprova/recusa saques pendentes |
+| POST | `/api/admin/payouts/:id/paid` | Registra transferência externa com referência |
+| GET | `/api/admin/finance/summary` | Soma pagamentos Pix confirmados, sem comissão de 1%, separando mercadorias e entregas |
+| GET | `/api/admin/finance/payments` | Lista pagamentos confirmados com paginação e intervalo de datas |
+
+Mococa é inicializada como cidade ativa sem polígono; configure polígonos para restringir bairros. `GET /api/restaurants/map?city=Mococa&bbox=-47.1,-21.6,-46.9,-21.3` fornece pins para o mapa; o token público do Mapbox deve ficar na configuração do frontend. O faturamento conta somente pagamentos Pix confirmados na conta central; dinheiro e cartão não estão integrados. Saques aprovados permanecem reservados até que um admin registre o pagamento e sua referência. A API não transfere dinheiro por conta própria.
 
 ## Mapa de endpoints (por funcionalidade pedida)
 
@@ -54,6 +83,8 @@ Papéis (`role`): `customer`, `restaurant_owner`, `courier`, `admin`.
 | Método | Rota | Descrição |
 |---|---|---|
 | GET | `/api/restaurants` | Lista pública (cache 60s), filtros `?city=&category=` |
+| GET | `/api/restaurants/map` | Pins de lojas aprovadas e ativas, opcionalmente filtrados por `city` e `bbox` |
+| GET | `/api/service-areas` | Cidades e polígonos ativos |
 | GET | `/api/restaurants/:id` | Detalhe + cardápio (cache) |
 | PATCH | `/api/restaurants/:id` | Edita dados do restaurante |
 | PATCH | `/api/restaurants/:id/toggle-open` | Abre/fecha a loja |
@@ -66,7 +97,7 @@ Papéis (`role`): `customer`, `restaurant_owner`, `courier`, `admin`.
 | GET | `/api/restaurants/:id/dashboard` | Métricas do dia + pedidos ativos |
 
 ### 3. Fazer pedidos como cliente
-| POST | `/api/orders` | Cria pedido `{ restaurantId, items:[{productId,quantity,notes}], deliveryAddress, paymentMethod }` |
+| POST | `/api/orders` | Cria pedido `{ restaurantId, items:[{productId,quantity,notes}], deliveryAddress, paymentMethod, couponCode? }` |
 
 ### 4. Gerenciar pedidos como cliente
 | Método | Rota | Descrição |
@@ -94,6 +125,8 @@ Papéis (`role`): `customer`, `restaurant_owner`, `courier`, `admin`.
 
 ### 8. Dashboard do entregador
 | GET | `/api/deliveries/dashboard` | Saldo, avaliação, entregas hoje, ganhos hoje, ativas e histórico recente |
+| POST | `/api/deliveries/payouts` | Solicita saque e reserva saldo disponível |
+| GET | `/api/deliveries/payouts/mine` | Consulta saques e saldo reservado/disponível |
 
 ## Fluxo de status do pedido
 
@@ -113,9 +146,9 @@ Quando o restaurante marca `ready_for_pickup`, o sistema automaticamente:
 ```
 src/
   config/     # env, mongo, redis
-  models/     # User, Restaurant, Product, Order, PixTransaction
-  plugins/    # auth (JWT + autorização por role)
-  routes/     # auth, restaurant, order, delivery, dashboard, pix
+  models/     # User, Admin, Restaurant, Product, Order, Coupon, ServiceArea, PixTransaction, PaymentLedger
+  plugins/    # autenticação e autorização separadas para usuário/admin
+  routes/     # auth, admin, service-area, restaurant, order, delivery, dashboard, pix
   services/   # regras de negócio (order, delivery, notification, pix)
   utils/      # erros, cache, geo, seed
   modules/    # documentação de módulos (PIX_README.md)

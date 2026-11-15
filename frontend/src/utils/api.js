@@ -1,6 +1,7 @@
 const API_URL = (import.meta.env.VITE_API_URL || 'https://perpetual-cooperation-development.up.railway.app').replace(/\/$/, '')
 
 let authToken = typeof localStorage === 'undefined' ? null : localStorage.getItem('mococa-token')
+let adminToken = typeof localStorage === 'undefined' ? null : localStorage.getItem('mococa-admin-token')
 
 export function setAuthToken(token) {
   authToken = token
@@ -10,12 +11,20 @@ export function setAuthToken(token) {
   }
 }
 
-async function request(path, { method = 'GET', body, headers = {} } = {}) {
+export function setAdminAuthToken(token) {
+  adminToken = token
+  if (typeof localStorage !== 'undefined') {
+    if (token) localStorage.setItem('mococa-admin-token', token)
+    else localStorage.removeItem('mococa-admin-token')
+  }
+}
+
+async function request(path, { method = 'GET', body, headers = {}, token = authToken } = {}) {
   const res = await fetch(`${API_URL}${path}`, {
     method,
     headers: {
       'Content-Type': 'application/json',
-      ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...headers
     },
     body: body !== undefined ? JSON.stringify(body) : undefined
@@ -34,6 +43,7 @@ async function request(path, { method = 'GET', body, headers = {} } = {}) {
 }
 
 const api = (path, options) => request(`/api${path}`, options)
+const adminApiRequest = (path, options = {}) => request(`/api/admin${path}`, { ...options, token: adminToken })
 
 export const authApi = {
   login(credentials) {
@@ -44,6 +54,21 @@ export const authApi = {
   },
   me() {
     return api('/auth/me')
+  }
+}
+
+export const adminApi = {
+  login(credentials) {
+    return adminApiRequest('/auth/login', { method: 'POST', body: credentials, token: null })
+  },
+  me() {
+    return adminApiRequest('/me')
+  },
+  logout() {
+    return adminApiRequest('/auth/logout', { method: 'POST' })
+  },
+  dashboard() {
+    return adminApiRequest('/dashboard')
   }
 }
 

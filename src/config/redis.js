@@ -31,5 +31,6 @@ export const RedisKeys = {
   orderAcceptLock: (orderId) => `lock:order:${orderId}:accept`, // evita 2 entregadores aceitarem a mesma corrida
   orderStatusChannel: (orderId) => `order:${orderId}:status`, // pub/sub para o cliente acompanhar em tempo real
 
-  loginAttempts: (email) => `security:login-attempts:${email}`
+  loginAttempts: (email) => `security:login-attempts:${email}`,
+  adminLoginAttempts: (email) => `security:admin-login-attempts:${email}`
 };

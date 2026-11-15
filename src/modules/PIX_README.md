@@ -2,7 +2,7 @@
 
 ## 📋 Visão Geral
 
-Módulo completo de integração com Pix para processamento de pagamentos automáticos no Mococa Food. Este módulo implementa todo o fluxo de pagamento via Pix, desde a geração do QR Code até a confirmação automática via webhook.
+Fluxo Pix do Mococa Food: gera cobranças para a conta central e confirma pagamentos por webhook assinado. A integração de transporte com o banco/PSP deve ser configurada fora da API e encaminhar callbacks no formato normalizado descrito abaixo.
 
 ## 🏗️ Arquitetura
 
@@ -30,7 +30,7 @@ src/
 - Status: `pending`, `paid`, `expired`, `cancelled`, `refunded`
 - Controle de expiração (configurável, padrão: 30 minutos)
 - Reconciliação automática via webhook
-- Histórico completo de cada transação
+- Histórico de cada transação e do identificador E2E retornado pelo provedor
 
 ### 3. **Integração com Pedidos**
 - Cria transação Pix automaticamente ao escolher pagamento via Pix
@@ -53,11 +53,11 @@ src/
   order: ObjectId,              // Referência ao pedido
   transactionId: String,        // ID único da transação
   pixCode: String,             // BR Code completo
-  endToEndId: String,          // ID E2E para rastreio bancário
+  endToEndId: String,          // ID E2E confirmado pelo provedor
   amount: Number,              // Valor da transação
   
   beneficiary: {
-    name: String,              // Nome do restaurante
+    name: String,              // Nome da conta central da plataforma
     key: String,               // Chave Pix
     keyType: String,           // Tipo da chave
     bank: String,              // Código do banco
@@ -110,8 +110,8 @@ Authorization: Bearer <token>
   "expiresAt": "2024-01-15T20:30:00.000Z",
   "status": "pending",
   "beneficiary": {
-    "name": "Restaurante X",
-    "key": "email@restaurante.com.br",
+    "name": "Mococa Food",
+    "key": "chave-da-conta-central",
     "keyType": "email"
   },
   "qrCodeBase64": "data:image/png;base64,iVBORw0KGgoAAAANS..."
@@ -141,7 +141,7 @@ Content-Type: application/json
 }
 ```
 
-### 5. Listar Transações (Admin/Restaurante)
+### 5. Listar Transações (Admin)
 ```http
 GET /api/pix/transactions?status=paid&limit=20&skip=0
 Authorization: Bearer <token>
@@ -151,11 +151,13 @@ Authorization: Bearer <token>
 ```http
 POST /api/pix/webhook
 Content-Type: application/json
+X-Webhook-Signature: sha256=<HMAC-SHA256 do corpo bruto>
 
 {
-  "endToEndId": "E1234567890ABCDEFGHIJKLMNOP",
   "transactionId": "TXN-1234567890-ABC123",
+  "endToEndId": "E1234567890ABCDEFGHIJKLMNOP",
   "status": "paid",
+  "amount": 45.90,
   "paidAt": "2024-01-15T20:15:00.000Z",
   "payer": {
     "name": "João Silva",
@@ -175,21 +177,16 @@ Adicione ao seu `.env`:
 # Configurações Pix
 PIX_ENABLED=true
 PIX_EXPIRATION_MINUTES=30
-PIX_WEBHOOK_SECRET=seu-segredo-webhook-aqui
+PIX_WEBHOOK_SECRET=segredo-compartilhado-com-o-provedor
+PIX_RECEIVER_KEY=chave-pix-da-conta-da-plataforma
+PIX_RECEIVER_KEY_TYPE=email
+PIX_RECEIVER_NAME=Mococa Food
+PIX_RECEIVER_CITY=MOCOCA
 ```
 
-### Configuração do Restaurante
+Os pagamentos Pix são direcionados à conta central da plataforma. Em produção, configure uma chave pertencente à operação e um banco/PSP que assine callbacks com `PIX_WEBHOOK_SECRET`. Não use chaves fictícias: sem conta central configurada, a API não emite cobrança.
 
-Cada restaurante deve configurar suas chaves Pix no modelo `Restaurant`:
-
-```javascript
-{
-  pixKey: "cnpj@restaurante.com.br",
-  pixKeyType: "email",  // cpf | cnpj | email | phone | random
-  pixBank: "001",       // Código do banco
-  pixMerchantName: "Restaurante LTDA"
-}
-```
+O callback precisa incluir o `transactionId` exibido no QR, o valor recebido em BRL e a assinatura HMAC do corpo HTTP bruto. O E2E bancário real pode ser enviado junto e fica armazenado para reconciliação.
 
 ## 🔄 Fluxo de Pagamento
 
@@ -202,7 +199,7 @@ Cada restaurante deve configurar suas chaves Pix no modelo `Restaurant`:
          ↓
 4. Banco processa pagamento e envia webhook
          ↓
-5. Sistema recebe webhook e valida dados
+5. Sistema valida a assinatura HMAC do corpo bruto e o valor recebido
          ↓
 6. Transação marcada como 'paid'
          ↓
@@ -217,17 +214,18 @@ Cada restaurante deve configurar suas chaves Pix no modelo `Restaurant`:
 
 ### Validações Implementadas
 - ✅ Verificação de autenticidade do usuário
-- ✅ Autorização baseada em roles (customer, restaurant_owner, admin)
+- ✅ Identidade administrativa em collection separada, com status e permissões revalidados
 - ✅ Idempotência no processamento de webhooks
+- ✅ Assinatura HMAC obrigatória e conferência do valor do pagamento
 - ✅ Validação de status antes de transições
-- ✅ CRC16 calculado corretamente no payload Pix
+- ✅ Campos EMV completos e CRC16 coberto por teste
 
 ### Em Produção
-- [ ] Implementar validação de assinatura HMAC do webhook
+- [ ] Integrar o provedor bancário/PSP escolhido e validar callbacks conforme o contrato dele
 - [ ] Usar certificado SSL para todas as comunicações
 - [ ] Implementar rate limiting nas rotas Pix
-- [ ] Adicionar logging de auditoria
-- [ ] Usar variáveis de ambiente para segredos
+- [x] Adicionar logging de auditoria para ações administrativas
+- [x] Usar variáveis de ambiente para segredos
 
 ## 🧪 Testes
 

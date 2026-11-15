@@ -3,6 +3,11 @@ import { PixTransaction } from '../models/PixTransaction.js';
 import { Order } from '../models/Order.js';
 import { BadRequest, NotFound, Conflict } from '../utils/errors.js';
 import { publishOrderUpdate } from './notification.service.js';
+import { PaymentLedger } from '../models/PaymentLedger.js';
+import { env } from '../config/env.js';
+import { createPixPayload } from '../utils/pixPayload.js';
+
+export { createPixPayload } from '../utils/pixPayload.js';
 
 /**
  * Gera um End-to-End ID único para transações Pix
@@ -22,117 +27,6 @@ function generateTransactionId() {
 }
 
 /**
- * Formata valor em centavos para string no formato Pix (sempre 2 casas decimais)
- */
-function formatPixAmount(amount) {
-  return amount.toFixed(2);
-}
-
-/**
- * CRC16 calculation for Pix payload
- * Polinômio: 0x1021 (CRC-CCITT)
- */
-function calculateCRC16(payload) {
-  let crc = 0xFFFF;
-  const polynomial = 0x1021;
-
-  for (let i = 0; i < payload.length; i++) {
-    crc ^= (payload.charCodeAt(i) << 8);
-    for (let j = 0; j < 8; j++) {
-      if ((crc & 0x8000) !== 0) {
-        crc = ((crc << 1) ^ polynomial) & 0xFFFF;
-      } else {
-        crc = (crc << 1) & 0xFFFF;
-      }
-    }
-  }
-
-  return crc.toString(16).toUpperCase().padStart(4, '0');
-}
-
-/**
- * Cria o payload BR Code do Pix (formato EMV QRCPS)
- * Baseado no Manual de Implementação do Pix do Banco Central
- */
-export function createPixPayload({
-  beneficiaryName,
-  beneficiaryKey,
-  beneficiaryKeyType,
-  beneficiaryBank,
-  beneficiaryCity,
-  amount,
-  transactionId,
-  description
-}) {
-  // Mapeamento dos tipos de chave Pix para códigos EMV
-  const keyTypeMap = {
-    cpf: '00',
-    cnpj: '01',
-    phone: '02',
-    email: '03',
-    random: '04'
-  };
-
-  const keyTypeCode = keyTypeMap[beneficiaryKeyType.toLowerCase()];
-  if (!keyTypeCode) {
-    throw new BadRequest('Tipo de chave Pix inválido');
-  }
-
-  // Validações básicas
-  if (!beneficiaryName || beneficiaryName.length > 25) {
-    throw new BadRequest('Nome do beneficiário deve ter até 25 caracteres');
-  }
-
-  if (!beneficiaryCity || beneficiaryCity.length > 15) {
-    throw new BadRequest('Cidade do beneficiário deve ter até 15 caracteres');
-  }
-
-  if (amount <= 0) {
-    throw new BadRequest('Valor da transação deve ser maior que zero');
-  }
-
-  // Construção do payload EMV
-  const fields = {
-    '00': '01', // Payload Format Indicator
-    '26': (() => {
-      // Merchant Account Information
-      const gui = '00' + 'BR.GOV.BCB.PIX'.padEnd(2, '\x00').slice(0, 2);
-      const key = '01' + beneficiaryKey.padEnd(2, '\x00').slice(0, 2);
-      const desc = description ? '02' + description.slice(0, 20).padEnd(2, '\x00').slice(0, 2) : '';
-      const length = (gui.length + key.length + desc.length).toString().padStart(2, '0');
-      return length + gui + key + desc;
-    })(),
-    '52': '0000', // Merchant Category Code (MCC)
-    '53': '986', // Transaction Currency (BRL)
-    '54': amount.toFixed(2).padEnd(2, '\x00').slice(0, 2), // Transaction Amount
-    '58': 'BR', // Country Code
-    '59': beneficiaryName.padEnd(2, '\x00').slice(0, 2), // Merchant Name
-    '60': beneficiaryCity.padEnd(2, '\x00').slice(0, 2), // Merchant City
-    '62': (() => {
-      // Additional Data Field Template
-      const txid = '05' + (transactionId || '***').slice(0, 25).padEnd(2, '\x00').slice(0, 2);
-      const length = txid.length.toString().padStart(2, '0');
-      return length + txid;
-    })(),
-    '63': '04' // CRC16 ID (será substituído pelo CRC calculado)
-  };
-
-  // Monta o payload concatenando todos os campos
-  let payload = '';
-  Object.entries(fields).forEach(([id, value]) => {
-    const idPadded = id.toString().padStart(2, '0');
-    const length = value.length.toString().padStart(2, '0');
-    payload += idPadded + length + value;
-  });
-
-  // Adiciona o CRC16
-  const crc = calculateCRC16(payload);
-  payload += '6304' + crc;
-
-  return payload;
-}
-
-/**
  * Cria uma nova transação Pix para um pedido
  */
 export async function createPixTransaction({ orderId, expiresInMinutes = 30 }) {
@@ -143,8 +37,11 @@ export async function createPixTransaction({ orderId, expiresInMinutes = 30 }) {
   }
 
   if (order.paymentMethod !== 'pix') {
-    throw new BadRequest('Este pedido não utiliza Pix como forma de pagamento');
+    throw BadRequest('Este pedido não utiliza Pix como forma de pagamento');
   }
+  if (!env.pixEnabled) throw BadRequest('Pagamento Pix está desabilitado');
+  if (!env.pixReceiverKey || !env.pixReceiverName) throw BadRequest('A conta central de recebimento Pix ainda não foi configurada');
+  if (order.status !== 'pending') throw new Conflict('Só é possível iniciar o pagamento de um pedido pendente');
 
   // Verifica se já existe transação pendente para este pedido
   const existingTransaction = await PixTransaction.findOne({
@@ -156,19 +53,17 @@ export async function createPixTransaction({ orderId, expiresInMinutes = 30 }) {
     return existingTransaction;
   }
 
-  const restaurant = order.restaurant;
   const transactionId = generateTransactionId();
   const endToEndId = generateEndToEndId();
   const expiresAt = new Date(Date.now() + expiresInMinutes * 60 * 1000);
 
-  // Configurações do beneficiário (restaurante)
-  // Em produção, isso viria das configurações da conta do restaurante
+  // Pagamentos são direcionados à conta central da plataforma, não à chave da loja.
   const beneficiaryConfig = {
-    name: restaurant.name,
-    key: restaurant.pixKey || 'chave-padrao@mococafood.com.br',
-    keyType: restaurant.pixKeyType || 'email',
-    bank: restaurant.pixBank || '001', // Banco do Brasil por padrão
-    city: restaurant.city || 'SAO PAULO'
+    name: env.pixReceiverName,
+    key: env.pixReceiverKey,
+    keyType: env.pixReceiverKeyType,
+    bank: 'platform',
+    city: env.pixReceiverCity
   };
 
   // Gera o payload Pix
@@ -198,7 +93,14 @@ export async function createPixTransaction({ orderId, expiresInMinutes = 30 }) {
     }
   });
 
-  await transaction.save();
+  try {
+    await transaction.save();
+  } catch (error) {
+    if (error.code !== 11000) throw error;
+    const pendingTransaction = await PixTransaction.findOne({ order: orderId, status: 'pending' });
+    if (pendingTransaction) return pendingTransaction;
+    throw error;
+  }
 
   return transaction;
 }
@@ -207,7 +109,8 @@ export async function createPixTransaction({ orderId, expiresInMinutes = 30 }) {
  * Obtém uma transação Pix por ID
  */
 export async function getPixTransaction(transactionId) {
-  const transaction = await PixTransaction.findById(transactionId).populate('order');
+  const transaction = await PixTransaction.findById(transactionId)
+    .populate({ path: 'order', populate: { path: 'restaurant', select: 'owner' } });
   
   if (!transaction) {
     throw new NotFound('Transação Pix não encontrada');
@@ -222,7 +125,7 @@ export async function getPixTransaction(transactionId) {
 export async function getPixTransactionByOrder(orderId) {
   const transaction = await PixTransaction.findOne({ order: orderId })
     .sort({ createdAt: -1 })
-    .populate('order');
+    .populate({ path: 'order', populate: { path: 'restaurant', select: 'owner' } });
   
   if (!transaction) {
     throw new NotFound('Nenhuma transação Pix encontrada para este pedido');
@@ -236,44 +139,87 @@ export async function getPixTransactionByOrder(orderId) {
  * Este método seria chamado pelo banco/gateway quando o pagamento é confirmado
  */
 export async function processPixWebhook(webhookData) {
-  const { endToEndId, transactionId, status, paidAt, payer } = webhookData;
+  const { endToEndId, transactionId, status, paidAt, payer, amount } = webhookData;
+  if (!endToEndId && !transactionId) throw BadRequest('endToEndId ou transactionId é obrigatório');
 
   // Busca a transação por endToEndId ou transactionId
-  const query = endToEndId ? { endToEndId } : { transactionId };
+  const query = transactionId ? { transactionId } : { endToEndId };
   const transaction = await PixTransaction.findOne(query).populate('order');
 
   if (!transaction) {
     throw new NotFound('Transação Pix não encontrada');
   }
 
-  if (transaction.status !== 'pending') {
-    throw new Conflict(`Transação já está com status "${transaction.status}"`);
-  }
-
-  // Atualiza a transação
   if (status === 'paid' || status === 'completed') {
-    transaction.markAsPaid(payer || {});
+    if (!Number.isFinite(Number(amount)) || Math.round(Number(amount) * 100) !== Math.round(transaction.amount * 100)) {
+      throw new Conflict('Valor confirmado não corresponde ao valor da transação');
+    }
+    if (transaction.status === 'paid') {
+      await recordPaymentLedger(transaction);
+      await confirmPaidOrder(transaction);
+      return transaction;
+    }
+    if (!['pending', 'expired', 'cancelled'].includes(transaction.status)) {
+      throw new Conflict(`Transação já está com status "${transaction.status}"`);
+    }
+
+    if (transaction.status === 'pending') transaction.markAsPaid(payer || {});
+    else {
+      transaction.status = 'paid';
+      transaction.paidAt = new Date();
+      transaction.payer = { ...transaction.payer, ...(payer || {}) };
+    }
+    if (paidAt && !Number.isNaN(new Date(paidAt).getTime())) transaction.paidAt = new Date(paidAt);
     transaction.webhookData = webhookData;
+    if (endToEndId) transaction.endToEndId = endToEndId;
     await transaction.save();
 
-    // Atualiza o pedido para "confirmed" automaticamente
-    const order = transaction.order;
-    if (order && order.status === 'pending') {
-      order.pushStatus('confirmed', 'Pagamento Pix confirmado');
-      await order.save();
-      
-      // Notifica sobre a atualização do pedido
-      await publishOrderUpdate(order._id, {
-        status: 'confirmed',
-        message: 'Pagamento confirmado! Restaurante já foi notificado.',
-        paymentConfirmed: true
-      });
-    }
+    await recordPaymentLedger(transaction);
+
+    await confirmPaidOrder(transaction);
 
     return transaction;
   }
 
-  throw new BadRequest('Status de pagamento não reconhecido');
+  if (transaction.status !== 'pending') throw new Conflict(`Transação já está com status "${transaction.status}"`);
+  throw BadRequest('Status de pagamento não reconhecido');
+}
+
+async function confirmPaidOrder(transaction) {
+  const order = transaction.order?._id ? transaction.order : await Order.findById(transaction.order);
+  if (!order || order.status !== 'pending') return;
+  order.pushStatus('confirmed', 'Pagamento Pix confirmado');
+  await order.save();
+  await publishOrderUpdate(order._id, {
+    status: 'confirmed',
+    message: 'Pagamento confirmado! Restaurante já foi notificado.',
+    paymentConfirmed: true
+  });
+}
+
+async function recordPaymentLedger(transaction) {
+  const order = transaction.order?._id ? transaction.order : await Order.findById(transaction.order);
+  if (!order) throw new NotFound('Pedido da transação não encontrado');
+  const grossAmountCents = Math.round(order.total * 100);
+  if (grossAmountCents !== Math.round(transaction.amount * 100)) {
+    throw new Conflict('Valor pago diverge do total registrado no pedido');
+  }
+  const deliveryFeeCents = Math.round(order.deliveryFee * 100);
+  await PaymentLedger.updateOne(
+    { transaction: transaction._id },
+    { $setOnInsert: {
+      transaction: transaction._id,
+      order: order._id,
+      restaurant: order.restaurant?._id || order.restaurant,
+      customer: order.customer?._id || order.customer,
+      paymentMethod: 'pix',
+      goodsAmountCents: grossAmountCents - deliveryFeeCents,
+      deliveryFeeCents,
+      grossAmountCents,
+      recordedAt: transaction.paidAt || new Date()
+    } },
+    { upsert: true }
+  );
 }
 
 /**

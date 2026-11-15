@@ -24,7 +24,7 @@ const userSchema = new Schema(
     phone: { type: String, trim: true },
     role: {
       type: String,
-      enum: ['customer', 'restaurant_owner', 'courier', 'admin'],
+      enum: ['customer', 'restaurant_owner', 'courier'],
       default: 'customer'
     },
     address: addressSchema,
@@ -41,7 +41,23 @@ const userSchema = new Schema(
       },
       rating: { type: Number, default: 5 },
       totalDeliveries: { type: Number, default: 0 },
-      balance: { type: Number, default: 0 } // saldo a receber/histórico simplificado
+      balance: { type: Number, default: 0 },
+      reservedBalance: { type: Number, default: 0 },
+      payoutRequests: [
+        {
+          amount: { type: Number, required: true, min: 0.01 },
+          status: { type: String, enum: ['pending', 'approved', 'rejected', 'paid'], default: 'pending' },
+          requestedAt: { type: Date, default: Date.now },
+          reviewedAt: Date,
+          reviewedBy: { type: Schema.Types.ObjectId, ref: 'Admin' },
+          approvedAt: Date,
+          approvedBy: { type: Schema.Types.ObjectId, ref: 'Admin' },
+          paidAt: Date,
+          paidBy: { type: Schema.Types.ObjectId, ref: 'Admin' },
+          rejectionReason: String,
+          paymentReference: String
+        }
+      ]
     },
 
     isActive: { type: Boolean, default: true }
@@ -50,5 +66,6 @@ const userSchema = new Schema(
 );
 
 //userSchema.index({ email: 1 }, { unique: true });
+userSchema.index({ 'courierProfile.payoutRequests.status': 1, 'courierProfile.payoutRequests.requestedAt': -1 });
 
 export const User = mongoose.model('User', userSchema);

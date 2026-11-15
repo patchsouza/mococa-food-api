@@ -12,7 +12,7 @@ import { User } from '../models/User.js';
 import { BadRequest } from '../utils/errors.js';
 
 export default async function deliveryRoutes(fastify) {
-  const courierOnly = { preHandler: fastify.authorize(['courier', 'admin']) };
+  const courierOnly = { preHandler: fastify.authorize(['courier']) };
 
   // Atualiza localização ao vivo do entregador (chamado periodicamente pelo app, ex: a cada 10s)
   fastify.post('/deliveries/location', courierOnly, async (request, reply) => {
@@ -91,6 +91,49 @@ export default async function deliveryRoutes(fastify) {
       deliveriesToday: deliveredToday.length,
       earningsToday,
       recentHistory: history.slice(0, 10)
+    });
+  });
+
+  fastify.post('/deliveries/payouts', courierOnly, async (request, reply) => {
+    const rawAmount = Number(request.body?.amount);
+    if (!Number.isFinite(rawAmount) || rawAmount <= 0) throw BadRequest('amount deve ser maior que zero');
+    const amount = Math.round(rawAmount * 100) / 100;
+
+    const courier = await User.findOneAndUpdate(
+      {
+        _id: request.user.sub,
+        role: 'courier',
+        isActive: true,
+        $expr: {
+          $gte: [
+            { $subtract: [{ $ifNull: ['$courierProfile.balance', 0] }, { $ifNull: ['$courierProfile.reservedBalance', 0] }] },
+            amount
+          ]
+        }
+      },
+      { $inc: { 'courierProfile.reservedBalance': amount }, $push: { 'courierProfile.payoutRequests': { amount, status: 'pending' } } },
+      { new: true, projection: { 'courierProfile.balance': 1, 'courierProfile.reservedBalance': 1, 'courierProfile.payoutRequests': { $slice: -1 } } }
+    );
+
+    if (!courier) throw BadRequest('Saldo disponível insuficiente para solicitar este saque');
+    const payout = courier.courierProfile.payoutRequests[0];
+    reply.code(201).send({
+      id: payout._id,
+      amount: payout.amount,
+      status: payout.status,
+      requestedAt: payout.requestedAt,
+      availableBalance: Math.round((courier.courierProfile.balance - courier.courierProfile.reservedBalance) * 100) / 100
+    });
+  });
+
+  fastify.get('/deliveries/payouts/mine', courierOnly, async (request, reply) => {
+    const courier = await User.findById(request.user.sub).select('courierProfile.balance courierProfile.reservedBalance courierProfile.payoutRequests').lean();
+    const payouts = [...(courier?.courierProfile?.payoutRequests || [])].sort((a, b) => new Date(b.requestedAt) - new Date(a.requestedAt));
+    reply.send({
+      balance: courier?.courierProfile?.balance || 0,
+      reservedBalance: courier?.courierProfile?.reservedBalance || 0,
+      availableBalance: Math.max(0, (courier?.courierProfile?.balance || 0) - (courier?.courierProfile?.reservedBalance || 0)),
+      payouts
     });
   });
 }

@@ -6,31 +6,36 @@ import {
   listPixTransactions
 } from '../services/pix.service.js';
 import { processPixWebhook } from '../services/pix.service.js';
-import { BadRequest, NotFound, Forbidden } from '../utils/errors.js';
+import { BadRequest, NotFound, Forbidden, Unauthorized } from '../utils/errors.js';
+import { Order } from '../models/Order.js';
+import mongoose from 'mongoose';
+import { env } from '../config/env.js';
+import { verifyWebhookSignature } from '../utils/signature.js';
 
 export default async function pixRoutes(fastify) {
   // ---- Criar transação Pix para um pedido ----
   fastify.post('/orders/:orderId/pix', { preHandler: fastify.authenticate }, async (request, reply) => {
     const { orderId } = request.params;
     const { expiresInMinutes } = request.body || {};
+    if (!mongoose.Types.ObjectId.isValid(orderId)) throw BadRequest('orderId inválido');
+    const lifetime = expiresInMinutes === undefined ? 30 : Number(expiresInMinutes);
+    if (!Number.isInteger(lifetime) || lifetime < 1 || lifetime > 60) throw BadRequest('expiresInMinutes deve ser entre 1 e 60');
 
     // Verifica se o usuário tem acesso ao pedido
-    const order = await fastify.mongo.db.collection('orders').findOne({ _id: new (await import('mongodb')).ObjectId(orderId) });
-    
+    const order = await Order.findById(orderId);
     if (!order) {
       throw NotFound('Pedido não encontrado');
     }
 
-    const { sub, role } = request.user;
+    const { sub } = request.user;
     const isCustomer = String(order.customer) === String(sub);
-    
-    if (!isCustomer && role !== 'admin' && role !== 'restaurant_owner') {
+    if (!isCustomer) {
       throw Forbidden('Você não tem acesso a este pedido');
     }
 
     const transaction = await createPixTransaction({
       orderId,
-      expiresInMinutes: expiresInMinutes || 30
+      expiresInMinutes: lifetime
     });
 
     reply.code(201).send({
@@ -50,13 +55,11 @@ export default async function pixRoutes(fastify) {
 
     const transaction = await getPixTransaction(transactionId);
 
-    const { sub, role } = request.user;
+    const { sub } = request.user;
     const order = transaction.order;
     
     const isCustomer = order && String(order.customer) === String(sub);
-    const isOwner = order && String(order.restaurant.owner) === String(sub);
-    
-    if (!isCustomer && !isOwner && role !== 'admin') {
+    if (!isCustomer) {
       throw Forbidden('Você não tem acesso a esta transação');
     }
 
@@ -80,13 +83,11 @@ export default async function pixRoutes(fastify) {
 
     const transaction = await getPixTransactionByOrder(orderId);
 
-    const { sub, role } = request.user;
+    const { sub } = request.user;
     const order = transaction.order;
     
     const isCustomer = order && String(order.customer) === String(sub);
-    const isOwner = order && String(order.restaurant.owner) === String(sub);
-    
-    if (!isCustomer && !isOwner && role !== 'admin') {
+    if (!isCustomer) {
       throw Forbidden('Você não tem acesso a esta transação');
     }
 
@@ -111,12 +112,12 @@ export default async function pixRoutes(fastify) {
 
     const transaction = await getPixTransaction(transactionId);
 
-    const { sub, role } = request.user;
+    const { sub } = request.user;
     const order = transaction.order;
     
     const isCustomer = order && String(order.customer) === String(sub);
     
-    if (!isCustomer && role !== 'admin') {
+    if (!isCustomer) {
       throw Forbidden('Apenas o cliente pode cancelar esta transação');
     }
 
@@ -130,7 +131,7 @@ export default async function pixRoutes(fastify) {
   });
 
   // ---- Listar transações Pix (admin ou restaurante) ----
-  fastify.get('/pix/transactions', { preHandler: fastify.authorize(['restaurant_owner', 'admin']) }, async (request, reply) => {
+  fastify.get('/pix/transactions', { preHandler: fastify.authorizeAdmin(['finance:read']) }, async (request, reply) => {
     const { orderId, status, limit, skip } = request.query || {};
 
     const filters = {};
@@ -153,17 +154,15 @@ export default async function pixRoutes(fastify) {
   });
 
   // ---- Webhook para recebimento de confirmações Pix ----
-  // Em produção, esta rota deve ter autenticação específica do banco/gateway
   fastify.post('/pix/webhook', async (request, reply) => {
     const webhookData = request.body;
 
-    // Validações básicas do webhook
     if (!webhookData) {
       throw BadRequest('Dados do webhook são obrigatórios');
     }
-
-    // Em produção, validar assinatura/autenticação do banco
-    // Ex: verificar header X-API-Key, assinatura HMAC, etc.
+    if (!verifyWebhookSignature(request.rawBody || '', request.headers['x-webhook-signature'], env.pixWebhookSecret)) {
+      throw Unauthorized('Assinatura do webhook inválida');
+    }
 
     try {
       const transaction = await processPixWebhook(webhookData);
@@ -176,13 +175,13 @@ export default async function pixRoutes(fastify) {
       });
     } catch (error) {
       // Log do erro mas retorna 200 para evitar retries desnecessários
-      fastify.log.error({ error, webhookData }, 'Erro ao processar webhook Pix');
+      fastify.log.error({ error }, 'Erro ao processar webhook Pix');
       
-      if (error.name === 'NotFound') {
+      if (error.statusCode === 404) {
         // Transação não encontrada - pode ser retry antigo
         reply.code(200).send({ success: false, message: 'Transação não encontrada' });
       } else {
-        reply.code(400).send({ success: false, message: error.message });
+        reply.code(error.statusCode || 500).send({ success: false, message: error.statusCode ? error.message : 'Erro interno ao processar o webhook' });
       }
     }
   });

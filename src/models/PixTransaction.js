@@ -24,7 +24,7 @@ const pixTransactionSchema = new Schema(
     // Valor
     amount: { type: Number, required: true },
     
-    // Informações do beneficiário (restaurante)
+    // Informações do beneficiário (conta central da plataforma)
     beneficiary: {
       name: { type: String, required: true },
       key: { type: String, required: true }, // Chave Pix (CPF/CNPJ/Email/Aleatória)
@@ -67,8 +67,7 @@ const pixTransactionSchema = new Schema(
 
 // Índices para consultas eficientes
 pixTransactionSchema.index({ order: 1, createdAt: -1 });
-pixTransactionSchema.index({ transactionId: 1 });
-pixTransactionSchema.index({ endToEndId: 1 });
+pixTransactionSchema.index({ order: 1 }, { unique: true, partialFilterExpression: { status: 'pending' } });
 pixTransactionSchema.index({ status: 1, expiresAt: 1 });
 pixTransactionSchema.index({ expiresAt: 1 }); // Para jobs de expiração
 

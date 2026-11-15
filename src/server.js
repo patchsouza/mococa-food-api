@@ -15,6 +15,11 @@ import orderRoutes from './routes/order.routes.js';
 import deliveryRoutes from './routes/delivery.routes.js';
 import dashboardRoutes from './routes/dashboard.routes.js';
 import pixRoutes from './routes/pix.routes.js';
+import adminRoutes from './routes/admin.routes.js';
+import serviceAreaRoutes from './routes/service-area.routes.js';
+import { ServiceArea } from './models/ServiceArea.js';
+import { User } from './models/User.js';
+import { Restaurant } from './models/Restaurant.js';
 
 import { HttpError } from './utils/errors.js';
 
@@ -28,6 +33,7 @@ const fastify = Fastify({
 const defaultJsonParser = fastify.getDefaultJsonParser('error', 'error');
 fastify.removeContentTypeParser('application/json');
 fastify.addContentTypeParser('application/json', { parseAs: 'string' }, (request, body, done) => {
+  request.rawBody = body;
   if (body.length === 0) return done(null, {});
   defaultJsonParser(request, body, done);
 });
@@ -40,6 +46,9 @@ fastify.setErrorHandler((error, request, reply) => {
   if (error.validation) {
     return reply.code(400).send({ error: 'Dados inválidos', details: error.validation });
   }
+  if (error.code === 11000) {
+    return reply.code(409).send({ error: 'Já existe um registro com esses dados' });
+  }
   if (error.statusCode >= 400 && error.statusCode < 500) {
     return reply.code(error.statusCode).send({ error: error.message });
   }
@@ -49,6 +58,19 @@ fastify.setErrorHandler((error, request, reply) => {
 
 async function bootstrap() {
   await connectDatabase(fastify.log);
+  await Promise.all([
+    User.updateMany({ isActive: { $exists: false } }, { $set: { isActive: true } }),
+    Restaurant.updateMany({ isActive: { $exists: false } }, { $set: { isActive: true } }),
+    Restaurant.updateMany(
+      { location: { $exists: false }, 'address.lat': { $type: 'number' }, 'address.lng': { $type: 'number' } },
+      [{ $set: { location: { type: 'Point', coordinates: ['$address.lng', '$address.lat'] } } }]
+    )
+  ]);
+  await ServiceArea.updateOne(
+    { slug: 'mococa', city: 'Mococa', state: 'SP' },
+    { $setOnInsert: { name: 'Mococa', slug: 'mococa', city: 'Mococa', state: 'SP', isActive: true } },
+    { upsert: true }
+  );
   await redis.ping();
   fastify.log.info('Redis conectado');
 
@@ -59,11 +81,13 @@ async function bootstrap() {
   fastify.get('/health', async () => ({ status: 'ok', service: 'mococa-food-api' }));
 
   await fastify.register(authRoutes, { prefix: '/api' });
+  await fastify.register(serviceAreaRoutes, { prefix: '/api' });
   await fastify.register(restaurantRoutes, { prefix: '/api' });
   await fastify.register(orderRoutes, { prefix: '/api' });
   await fastify.register(deliveryRoutes, { prefix: '/api' });
   await fastify.register(dashboardRoutes, { prefix: '/api' });
   await fastify.register(pixRoutes, { prefix: '/api' });
+  await fastify.register(adminRoutes, { prefix: '/api/admin' });
 
   await fastify.listen({ port: env.port, host: env.host });
   fastify.log.info(`Mococa Food API rodando em http://${env.host}:${env.port}`);

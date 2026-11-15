@@ -13,7 +13,7 @@ import { BadRequest, Forbidden, NotFound } from '../utils/errors.js';
 export default async function orderRoutes(fastify) {
   // ---- 3. Fazer pedidos como cliente ----
   fastify.post('/orders', { preHandler: fastify.authorize(['customer']) }, async (request, reply) => {
-    const { restaurantId, items, deliveryAddress, paymentMethod } = request.body || {};
+    const { restaurantId, items, deliveryAddress, paymentMethod, couponCode } = request.body || {};
     if (!restaurantId) throw BadRequest('restaurantId é obrigatório');
 
     const order = await createOrder({
@@ -21,7 +21,8 @@ export default async function orderRoutes(fastify) {
       restaurantId,
       items,
       deliveryAddress,
-      paymentMethod
+      paymentMethod,
+      couponCode
     });
 
     reply.code(201).send(order);
@@ -36,12 +37,12 @@ export default async function orderRoutes(fastify) {
   fastify.get('/orders/:id', { preHandler: fastify.authenticate }, async (request, reply) => {
     const order = await getOrderOrThrow(request.params.id);
 
-    const { sub, role } = request.user;
+    const { sub } = request.user;
     const isCustomer = String(order.customer._id || order.customer) === String(sub);
     const isCourier = order.courier && String(order.courier._id || order.courier) === String(sub);
     const isOwner = String(order.restaurant.owner) === String(sub);
 
-    if (!isCustomer && !isCourier && !isOwner && role !== 'admin') {
+    if (!isCustomer && !isCourier && !isOwner) {
       throw Forbidden('Você não tem acesso a este pedido');
     }
 
@@ -61,9 +62,9 @@ export default async function orderRoutes(fastify) {
   // ---- 5. Esperar entrega a ser feita (acompanhamento em tempo real via SSE) ----
   fastify.get('/orders/:id/stream', { preHandler: fastify.authenticate }, async (request, reply) => {
     const order = await getOrderOrThrow(request.params.id);
-    const { sub, role } = request.user;
+    const { sub } = request.user;
     const isCustomer = String(order.customer._id || order.customer) === String(sub);
-    if (!isCustomer && role !== 'admin') throw Forbidden('Apenas o cliente do pedido pode acompanhar');
+    if (!isCustomer) throw Forbidden('Apenas o cliente do pedido pode acompanhar');
 
     reply.raw.writeHead(200, {
       'Content-Type': 'text/event-stream',
@@ -87,7 +88,7 @@ export default async function orderRoutes(fastify) {
   // ---- Gerenciamento de pedidos pelo restaurante (parte de "gerenciar restaurante") ----
   fastify.get(
     '/restaurants/:id/orders',
-    { preHandler: fastify.authorize(['restaurant_owner', 'admin']) },
+    { preHandler: fastify.authorize(['restaurant_owner']) },
     async (request, reply) => {
       const restaurant = await Restaurant.findById(request.params.id);
       if (!restaurant) throw NotFound('Restaurante não encontrado');
@@ -102,7 +103,7 @@ export default async function orderRoutes(fastify) {
 
   fastify.patch(
     '/orders/:id/status',
-    { preHandler: fastify.authorize(['restaurant_owner', 'admin']) },
+    { preHandler: fastify.authorize(['restaurant_owner']) },
     async (request, reply) => {
       const { nextStatus, note } = request.body || {};
       if (!nextStatus) throw BadRequest('nextStatus é obrigatório');

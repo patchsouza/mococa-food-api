@@ -11,6 +11,14 @@ const openingHoursSchema = new Schema(
   { _id: false }
 );
 
+const pointSchema = new Schema(
+  {
+    type: { type: String, enum: ['Point'], default: 'Point' },
+    coordinates: { type: [Number], required: true }
+  },
+  { _id: false }
+);
+
 const restaurantSchema = new Schema(
   {
     owner: { type: Schema.Types.ObjectId, ref: 'User', required: true },
@@ -29,9 +37,10 @@ const restaurantSchema = new Schema(
       lat: { type: Number, required: true },
       lng: { type: Number, required: true }
     },
+    location: pointSchema,
 
-    deliveryFee: { type: Number, default: 0 },
-    minOrderValue: { type: Number, default: 0 },
+    deliveryFee: { type: Number, default: 0, min: 0 },
+    minOrderValue: { type: Number, default: 0, min: 0 },
     avgPrepTimeMinutes: { type: Number, default: 30 },
 
     // Configurações de pagamento Pix do restaurante
@@ -43,6 +52,7 @@ const restaurantSchema = new Schema(
     openingHours: [openingHoursSchema],
     isOpen: { type: Boolean, default: true }, // aberto/fechado manual pelo dono
     isApproved: { type: Boolean, default: true }, // aprovação de cadastro (admin)
+    isActive: { type: Boolean, default: true },
 
     rating: { type: Number, default: 5 },
     ratingCount: { type: Number, default: 0 }
@@ -52,6 +62,13 @@ const restaurantSchema = new Schema(
 
 restaurantSchema.index({ owner: 1 });
 restaurantSchema.index({ 'address.city': 1 });
+restaurantSchema.index({ location: '2dsphere' });
 restaurantSchema.index({ name: 'text', category: 'text' });
+
+restaurantSchema.pre('save', function () {
+  if (Number.isFinite(this.address?.lng) && Number.isFinite(this.address?.lat)) {
+    this.location = { type: 'Point', coordinates: [this.address.lng, this.address.lat] };
+  }
+});
 
 export const Restaurant = mongoose.model('Restaurant', restaurantSchema);

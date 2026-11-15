@@ -2,13 +2,14 @@ import { connectDatabase, disconnectDatabase } from '../config/database.js';
 import { User } from '../models/User.js';
 import { Restaurant } from '../models/Restaurant.js';
 import { Product } from '../models/Product.js';
+import bcrypt from 'bcryptjs';
 
 async function seed() {
   await connectDatabase(console);
 
   await Promise.all([User.deleteMany({}), Restaurant.deleteMany({}), Product.deleteMany({})]);
 
-  const passwordHash = await Bun.password.hash('123456');
+  const passwordHash = await bcrypt.hash('123456', 10);
 
   const owner = await User.create({
     name: 'Dono Lanchonete Mococa',
@@ -48,10 +49,7 @@ async function seed() {
     },
     deliveryFee: 5,
     minOrderValue: 15,
-    // Dados Pix para testes do módulo de pagamento
-    pixKey: 'financeiro@lanchonetecentral.com.br',
-    pixKeyType: 'email',
-    pixBank: '001'
+    isApproved: true
   });
 
   await Product.insertMany([

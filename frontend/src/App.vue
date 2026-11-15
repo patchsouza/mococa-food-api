@@ -1,5 +1,6 @@
 <template>
-  <div class="app-container">
+  <AdminArea v-if="isAdminPath" />
+  <div v-else class="app-container">
     <transition name="view" mode="out-in">
       <component :is="currentScreen" :key="nav.view" />
     </transition>
@@ -7,7 +8,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useNavigationStore } from './stores/navigation'
 import { useAuthStore } from './stores/auth'
 
@@ -19,9 +20,12 @@ import ClienteCartView from './components/cliente/ClienteCartView.vue'
 import LojaSetupView from './components/loja/LojaSetupView.vue'
 import LojaDashboardView from './components/loja/LojaDashboardView.vue'
 import MotoDashboardView from './components/moto/MotoDashboardView.vue'
+import AdminArea from './components/admin/AdminArea.vue'
 
 const nav = useNavigationStore()
 const auth = useAuthStore()
+const ADMIN_PATH = '/console-7f3a9c'
+const isAdminPath = ref(window.location.pathname === ADMIN_PATH)
 
 // Maps each named "screen" in the navigation stack to its component.
 // Adding a new screen only ever requires an entry here + one file in src/components.
@@ -38,5 +42,15 @@ const SCREENS = {
 
 const currentScreen = computed(() => SCREENS[nav.view])
 
-onMounted(() => auth.restoreSession())
+function syncPath() {
+  isAdminPath.value = window.location.pathname === ADMIN_PATH
+  if (!isAdminPath.value) auth.restoreSession()
+}
+
+onMounted(() => {
+  window.addEventListener('popstate', syncPath)
+  syncPath()
+})
+
+onUnmounted(() => window.removeEventListener('popstate', syncPath))
 </script>

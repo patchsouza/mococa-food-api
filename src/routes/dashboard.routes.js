@@ -6,7 +6,7 @@ export default async function dashboardRoutes(fastify) {
   // Dashboard do dono do restaurante: pedidos ativos + métricas do dia
   fastify.get(
     '/restaurants/:id/dashboard',
-    { preHandler: fastify.authorize(['restaurant_owner', 'admin']) },
+    { preHandler: fastify.authorize(['restaurant_owner']) },
     async (request, reply) => {
       const restaurant = await Restaurant.findById(request.params.id);
       if (!restaurant) throw NotFound('Restaurante não encontrado');

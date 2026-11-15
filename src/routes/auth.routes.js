@@ -30,7 +30,7 @@ export default async function authRoutes(fastify) {
       role: ['customer', 'restaurant_owner', 'courier'].includes(role) ? role : 'customer'
     });
 
-    const token = fastify.jwt.sign({ sub: String(user._id), role: user.role, name: user.name });
+    const token = fastify.jwt.sign({ principalType: 'user', sub: String(user._id), role: user.role, name: user.name });
 
     reply.code(201).send({
       token,
@@ -62,7 +62,9 @@ export default async function authRoutes(fastify) {
 
     await redis.del(attemptsKey);
 
-    const token = fastify.jwt.sign({ sub: String(user._id), role: user.role, name: user.name });
+    if (!user.isActive || user.role === 'admin') throw Unauthorized('E-mail ou senha inválidos');
+
+    const token = fastify.jwt.sign({ principalType: 'user', sub: String(user._id), role: user.role, name: user.name });
     reply.send({
       token,
       user: { id: user._id, name: user.name, email: user.email, role: user.role }

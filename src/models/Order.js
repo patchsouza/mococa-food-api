@@ -47,7 +47,13 @@ const orderSchema = new Schema(
 
     subtotal: { type: Number, required: true },
     deliveryFee: { type: Number, required: true, default: 0 },
+    discountAmount: { type: Number, required: true, default: 0, min: 0 },
     total: { type: Number, required: true },
+    coupon: {
+      id: { type: Schema.Types.ObjectId, ref: 'Coupon' },
+      code: String,
+      discountAmount: Number
+    },
 
     deliveryAddress: {
       street: String,

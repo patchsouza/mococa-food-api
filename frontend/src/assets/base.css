@@ -159,6 +159,10 @@ a:hover {
   box-shadow: var(--shadow-lg);
 }
 
+#app {
+  width: 100%;
+}
+
 .view {
   flex: 1;
   min-height: 0;
